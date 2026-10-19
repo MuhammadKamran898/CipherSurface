@@ -93,6 +93,16 @@ public sealed class EvidenceUsabilityEvaluator
                 continue;
             }
 
+            // Admin-email proof is a one-time human confirmation that expires on its own. There is
+            // nothing to observe live, so it is usable while Active and unexpired (checked above),
+            // and any live result supplied for it is ignored. Observable methods continue below.
+            if (evidence.Method == VerificationMethod.AdminEmail)
+            {
+                if (evidence.Status == EvidenceStatus.Active)
+                    usable.Add(ToUsableEvidence(evidence));
+                continue;
+            }
+
             // Critical fail-closed check: every current Active/AtRisk row needs its own live result.
             if (!resultById.TryGetValue(evidence.Id, out var result))
             {

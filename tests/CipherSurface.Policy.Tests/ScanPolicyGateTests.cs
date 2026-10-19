@@ -278,6 +278,33 @@ public sealed class ScanPolicyGateTests
     }
 
     [Fact]
+    public void EmailEvidenceNeedsNoLiveCheck_AndAuthorizesTheRootOnly()
+    {
+        var email = TestFixture.EmailEvidence();
+        var result = _gate.Evaluate(TestFixture.StartRequest(
+            targets: ["example.com"],
+            evidence: [TestFixture.Unchecked(email)],
+            rules: [TestFixture.Rule(ScopeRuleType.Include, "example.com")]));
+
+        Assert.True(result.Allowed);
+        Assert.Equal(new[] { email.Id }, result.Decision.EvidenceIds);
+        Assert.Empty(result.EvidenceChanges);
+    }
+
+    [Fact]
+    public void EmailEvidenceWithoutLiveCheck_StillDeniesSubdomains()
+    {
+        var email = TestFixture.EmailEvidence();
+        var result = _gate.Evaluate(TestFixture.StartRequest(
+            targets: ["app.example.com"],
+            evidence: [TestFixture.Unchecked(email)],
+            rules: [TestFixture.Rule(ScopeRuleType.Include, "example.com"), TestFixture.Rule(ScopeRuleType.Include, "*.example.com")]));
+
+        Assert.False(result.Allowed);
+        Assert.Equal("TargetOutsideEffectiveScope", result.FailedCheckCode);
+    }
+
+    [Fact]
     public void MissingLiveCheckForActiveEvidence_FailsClosed()
     {
         var active = TestFixture.DnsEvidence();
