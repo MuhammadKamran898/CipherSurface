@@ -1,6 +1,7 @@
 using CipherSurface.Data.Entities;
 using CipherSurface.Data.Enums;
 using CipherSurface.Verification;
+using CipherSurface.Verification.Email;
 using Microsoft.EntityFrameworkCore;
 
 namespace CipherSurface.Services.Tests;
@@ -13,23 +14,40 @@ public sealed class FakeTime : TimeProvider
     public void Advance(TimeSpan by) => _now += by;
 }
 
-/// <summary>Verifier whose answer is scripted by call number (0, 1, 2 ...).</summary>
+/// <summary>Verifier whose answer is scripted by call number (0, 1, 2 ...). The script can be replaced mid-test.</summary>
 public sealed class ScriptedVerifier : IOwnershipVerifier
 {
-    private readonly Func<int, VerificationObservation> _script;
     private int _calls;
 
     public ScriptedVerifier(VerificationMethod method, Func<int, VerificationObservation> script)
     {
         Method = method;
-        _script = script;
+        Script = script;
     }
 
     public VerificationMethod Method { get; }
+    public Func<int, VerificationObservation> Script { get; set; }
     public int Calls => _calls;
 
     public Task<VerificationObservation> CheckAsync(VerificationRequest request, CancellationToken ct) =>
-        Task.FromResult(_script(Interlocked.Increment(ref _calls) - 1));
+        Task.FromResult(Script(Interlocked.Increment(ref _calls) - 1));
+}
+
+public sealed class RecordingEmailSender : IEmailSender
+{
+    public List<EmailMessage> Sent { get; } = new();
+    public bool FailNext { get; set; }
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct)
+    {
+        if (FailNext)
+        {
+            FailNext = false;
+            throw new InvalidOperationException("SMTP is down");
+        }
+        lock (Sent) Sent.Add(message);
+        return Task.CompletedTask;
+    }
 }
 
 public sealed class TestWorld
@@ -38,10 +56,14 @@ public sealed class TestWorld
     public required FakeTime Time { get; init; }
     public required ScriptedVerifier Dns { get; init; }
     public required ScriptedVerifier Http { get; init; }
+    public required RecordingEmailSender Sender { get; init; }
     public required AuditLogWriter Audit { get; init; }
     public required DomainOnboardingService Onboarding { get; init; }
     public required ChallengeService Challenges { get; init; }
     public required VerificationService Verification { get; init; }
+    public required EmailVerificationService Email { get; init; }
+    public required EvidenceReverificationService Reverify { get; init; }
+    public required EvidenceLifecycleService Lifecycle { get; init; }
 
     public static readonly DateTimeOffset Start = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
     private int _counter;
@@ -49,7 +71,8 @@ public sealed class TestWorld
     public static async Task<TestWorld> CreateAsync(
         PostgresFixture postgres,
         Func<int, VerificationObservation>? dnsScript = null,
-        VerificationOptions? options = null)
+        VerificationOptions? options = null,
+        EmailVerificationOptions? emailOptions = null)
     {
         var db = await postgres.CreateDatabaseAsync();
         var time = new FakeTime(Start);
@@ -58,6 +81,8 @@ public sealed class TestWorld
         var registry = new VerifierRegistry(new IOwnershipVerifier[] { dns, http });
         var audit = new AuditLogWriter(time);
         var claims = new ClaimService(time, audit);
+        var sender = new RecordingEmailSender();
+        var attemptOptions = options ?? new VerificationOptions();
 
         return new TestWorld
         {
@@ -65,27 +90,38 @@ public sealed class TestWorld
             Time = time,
             Dns = dns,
             Http = http,
+            Sender = sender,
             Audit = audit,
             Onboarding = new DomainOnboardingService(db, time, audit, new DomainNameValidator()),
             Challenges = new ChallengeService(db, time, audit),
-            Verification = new VerificationService(db, time, registry, claims, audit, options ?? new VerificationOptions(),
-                delay: (_, _) => Task.CompletedTask)
+            Verification = new VerificationService(db, time, registry, claims, audit, attemptOptions, delay: (_, _) => Task.CompletedTask),
+            Email = new EmailVerificationService(db, time, claims, audit, sender, emailOptions, attemptOptions),
+            Reverify = new EvidenceReverificationService(db, time, registry, audit),
+            Lifecycle = new EvidenceLifecycleService(db, time, audit)
         };
     }
 
     /// <summary>Creates an organization with one member in the given role.</summary>
     public async Task<Actor> NewOrgAsync(string name, MembershipRole role = MembershipRole.Owner, string? ip = null)
     {
-        var n = Interlocked.Increment(ref _counter);
         await using var db = Db.CreateDbContext();
         var org = new Organization { Id = Guid.NewGuid(), Name = name, Status = OrganizationStatus.Active, CreatedAt = Start };
-        var user = new User { Id = Guid.NewGuid(), Email = $"user{n}-{Guid.NewGuid():N}@example.org", PasswordHash = "x", CreatedAt = Start };
         db.Organizations.Add(org);
+        await db.SaveChangesAsync();
+        return await AddMemberAsync(org.Id, role, ip);
+    }
+
+    /// <summary>Adds another user to an existing organization.</summary>
+    public async Task<Actor> AddMemberAsync(Guid organizationId, MembershipRole role, string? ip = null)
+    {
+        var n = Interlocked.Increment(ref _counter);
+        await using var db = Db.CreateDbContext();
+        var user = new User { Id = Guid.NewGuid(), Email = $"user{n}-{Guid.NewGuid():N}@example.org", PasswordHash = "x", CreatedAt = Start };
         db.Users.Add(user);
         await db.SaveChangesAsync();
-        db.Memberships.Add(new Membership { Id = Guid.NewGuid(), OrganizationId = org.Id, UserId = user.Id, Role = role, CreatedAt = Start });
+        db.Memberships.Add(new Membership { Id = Guid.NewGuid(), OrganizationId = organizationId, UserId = user.Id, Role = role, CreatedAt = Start });
         await db.SaveChangesAsync();
-        return new Actor(user.Id, org.Id, ip ?? $"203.0.113.{n % 250 + 1}");
+        return new Actor(user.Id, organizationId, ip ?? $"203.0.113.{n % 250 + 1}");
     }
 
     public Task<Guid> AddDomainAsync(Actor actor, string name) =>
@@ -103,11 +139,62 @@ public sealed class TestWorld
         return await db.VerificationChallenges.AsNoTracking().SingleAsync(c => c.Id == id);
     }
 
+    public async Task<VerificationEvidence> GetEvidenceAsync(Guid id)
+    {
+        await using var db = Db.CreateDbContext();
+        return await db.VerificationEvidence.AsNoTracking().SingleAsync(e => e.Id == id);
+    }
+
     public async Task SuspendAsync(Guid organizationId)
     {
         await using var db = Db.CreateDbContext();
         var org = await db.Organizations.SingleAsync(o => o.Id == organizationId);
         org.Status = OrganizationStatus.Suspended;
         await db.SaveChangesAsync();
+    }
+}
+
+/// <summary>Ready-made starting states for tests.</summary>
+public static class Scenarios
+{
+    public static async Task<(Guid DomainId, Guid EvidenceId)> VerifiedByDnsAsync(TestWorld world, Actor owner, string name = "example.com")
+    {
+        var domainId = await world.AddDomainAsync(owner, name);
+        var challenge = await world.Challenges.IssueAsync(owner, domainId, VerificationMethod.DnsTxt, null, CancellationToken.None);
+        await world.Verification.VerifyAsync(owner, challenge.ChallengeId, CancellationToken.None);
+        return (domainId, await EvidenceIdAsync(world, challenge.ChallengeId));
+    }
+
+    public static async Task<Guid> AddHttpEvidenceAsync(TestWorld world, Actor owner, Guid domainId)
+    {
+        var challenge = await world.Challenges.IssueAsync(owner, domainId, VerificationMethod.HttpFile, null, CancellationToken.None);
+        await world.Verification.VerifyAsync(owner, challenge.ChallengeId, CancellationToken.None);
+        return await EvidenceIdAsync(world, challenge.ChallengeId);
+    }
+
+    public static async Task<(Guid DomainId, Guid EvidenceId)> VerifiedByEmailAsync(TestWorld world, Actor owner, string name = "example.com")
+    {
+        var domainId = await world.AddDomainAsync(owner, name);
+        var (challengeId, token) = await IssueEmailAsync(world, owner, domainId, $"admin@{name}");
+        await world.Email.ConfirmAsync(owner, challengeId, token, CancellationToken.None);
+        return (domainId, await EvidenceIdAsync(world, challengeId));
+    }
+
+    public static async Task<(Guid ChallengeId, string Token)> IssueEmailAsync(TestWorld world, Actor actor, Guid domainId, string recipient)
+    {
+        await world.Email.IssueAsync(actor, domainId, recipient, new Uri("https://app.ciphersurface.test/verify-email"), CancellationToken.None);
+        return ParseLink(world.Sender.Sent[^1]);
+    }
+
+    public static (Guid ChallengeId, string Token) ParseLink(EmailMessage message)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(message.TextBody, @"\?c=([0-9a-fA-F-]{36})&t=([A-Za-z0-9_-]+)");
+        return (Guid.Parse(match.Groups[1].Value), match.Groups[2].Value);
+    }
+
+    private static async Task<Guid> EvidenceIdAsync(TestWorld world, Guid challengeId)
+    {
+        await using var db = world.Db.CreateDbContext();
+        return await db.VerificationEvidence.Where(e => e.ChallengeId == challengeId).Select(e => e.Id).SingleAsync();
     }
 }

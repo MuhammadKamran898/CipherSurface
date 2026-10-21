@@ -82,11 +82,7 @@ public sealed class VerificationService
                     throw new ServiceException("AttemptLimitReached", "Too many failed attempts. Generate a new challenge.");
                 }
 
-                var since = now.AddHours(-1);
-                var byUser = await db.VerificationAttempts.CountAsync(a => a.UserId == actor.UserId && a.StartedAt > since, ct);
-                var byIp = await db.VerificationAttempts.CountAsync(a => a.Ip == actor.Ip && a.StartedAt > since, ct);
-                if (byUser >= _options.MaxAttemptsPerUserPerHour || byIp >= _options.MaxAttemptsPerIpPerHour)
-                    throw new ServiceException("RateLimited", "Too many verification attempts. Try again later.");
+                await AttemptRateLimit.EnsureAsync(db, actor, now, _options, ct);
 
                 var attempt = new VerificationAttempt
                 {

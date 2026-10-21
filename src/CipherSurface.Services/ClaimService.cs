@@ -1,6 +1,7 @@
 using CipherSurface.Data;
 using CipherSurface.Data.Entities;
 using CipherSurface.Data.Enums;
+using CipherSurface.Verification.Email;
 using Microsoft.EntityFrameworkCore;
 
 namespace CipherSurface.Services;
@@ -60,7 +61,9 @@ public sealed class ClaimService
         await DbLocks.AcquireAsync(db, $"domain:{domain.Name}", ct);
 
         var now = _time.GetUtcNow();
-        var evidence = EvidenceFactory.ForObservable(challenge, now);
+        var evidence = challenge.Method == VerificationMethod.AdminEmail
+            ? EmailEvidenceFactory.Create(challenge, now)
+            : EvidenceFactory.ForObservable(challenge, now);
         db.VerificationEvidence.Add(evidence);
         challenge.Status = ChallengeStatus.Passed;
 

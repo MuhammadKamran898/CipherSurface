@@ -7,5 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="../CipherSurface.Data/CipherSurface.Data.csproj" />
     <ProjectReference Include="../CipherSurface.Verification/CipherSurface.Verification.csproj" />
+    <ProjectReference Include="../CipherSurface.Policy/CipherSurface.Policy.csproj" />
   </ItemGroup>
 </Project>
