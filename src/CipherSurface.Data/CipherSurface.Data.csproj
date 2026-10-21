@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Content Include="Sql\*.sql" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Sql\001_integrity.sql" />
   </ItemGroup>
 
 </Project>
