@@ -205,6 +205,10 @@ public sealed class EmailVerificationService
         {
             throw new ServiceException("Busy", "This confirmation is being processed. Try again in a moment.");
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+        {
+            throw new ServiceException("Busy", "This confirmation was just completed by another request.");
+        }
 
         if (failure is not null) throw failure;
         return success!;

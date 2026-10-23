@@ -33,6 +33,12 @@ public sealed class ScriptedVerifier : IOwnershipVerifier
         Task.FromResult(Script(Interlocked.Increment(ref _calls) - 1));
 }
 
+public sealed class TestPlatformAdminPolicy : IPlatformAdminPolicy
+{
+    public HashSet<Guid> Admins { get; } = new();
+    public Task<bool> IsPlatformAdminAsync(Guid userId, CancellationToken ct) => Task.FromResult(Admins.Contains(userId));
+}
+
 public sealed class RecordingEmailSender : IEmailSender
 {
     public List<EmailMessage> Sent { get; } = new();
@@ -64,6 +70,9 @@ public sealed class TestWorld
     public required EmailVerificationService Email { get; init; }
     public required EvidenceReverificationService Reverify { get; init; }
     public required EvidenceLifecycleService Lifecycle { get; init; }
+    public required DisputeService Disputes { get; init; }
+    public required TestPlatformAdminPolicy AdminPolicy { get; init; }
+    public required PlatformAdminGate AdminGate { get; init; }
 
     public static readonly DateTimeOffset Start = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
     private int _counter;
@@ -83,6 +92,7 @@ public sealed class TestWorld
         var claims = new ClaimService(time, audit);
         var sender = new RecordingEmailSender();
         var attemptOptions = options ?? new VerificationOptions();
+        var adminPolicy = new TestPlatformAdminPolicy();
 
         return new TestWorld
         {
@@ -97,7 +107,10 @@ public sealed class TestWorld
             Verification = new VerificationService(db, time, registry, claims, audit, attemptOptions, delay: (_, _) => Task.CompletedTask),
             Email = new EmailVerificationService(db, time, claims, audit, sender, emailOptions, attemptOptions),
             Reverify = new EvidenceReverificationService(db, time, registry, audit),
-            Lifecycle = new EvidenceLifecycleService(db, time, audit)
+            Lifecycle = new EvidenceLifecycleService(db, time, audit),
+            Disputes = new DisputeService(db, time, audit),
+            AdminPolicy = adminPolicy,
+            AdminGate = new PlatformAdminGate(adminPolicy)
         };
     }
 
@@ -145,6 +158,18 @@ public sealed class TestWorld
         return await db.VerificationEvidence.AsNoTracking().SingleAsync(e => e.Id == id);
     }
 
+    /// <summary>A real user row (the dispute record points at it) acting as platform administrator.</summary>
+    public async Task<PlatformAdmin> NewPlatformAdminAsync()
+    {
+        var n = Interlocked.Increment(ref _counter);
+        await using var db = Db.CreateDbContext();
+        var user = new User { Id = Guid.NewGuid(), Email = $"platform{n}-{Guid.NewGuid():N}@example.org", PasswordHash = "x", CreatedAt = Start };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        AdminPolicy.Admins.Add(user.Id);
+        return await AdminGate.AuthorizeAsync(user.Id, CancellationToken.None);
+    }
+
     public async Task SuspendAsync(Guid organizationId)
     {
         await using var db = Db.CreateDbContext();
@@ -170,6 +195,18 @@ public static class Scenarios
         var challenge = await world.Challenges.IssueAsync(owner, domainId, VerificationMethod.HttpFile, null, CancellationToken.None);
         await world.Verification.VerifyAsync(owner, challenge.ChallengeId, CancellationToken.None);
         return await EvidenceIdAsync(world, challenge.ChallengeId);
+    }
+
+    /// <summary>A holds example.com (verified by DNS); B verified the same name and was disputed.</summary>
+    public static async Task<OpenDispute> OpenDisputeAsync(TestWorld world, string name = "example.com")
+    {
+        var a = await world.NewOrgAsync("Holder");
+        var b = await world.NewOrgAsync("Claimant");
+        var (domainA, evidenceA) = await VerifiedByDnsAsync(world, a, name);
+        var (domainB, evidenceB) = await VerifiedByDnsAsync(world, b, name);
+        await using var db = world.Db.CreateDbContext();
+        var disputeId = await db.DomainDisputes.Where(d => d.ClaimantDomainId == domainB).Select(d => d.Id).SingleAsync();
+        return new OpenDispute(a, b, domainA, evidenceA, domainB, evidenceB, disputeId);
     }
 
     public static async Task<(Guid DomainId, Guid EvidenceId)> VerifiedByEmailAsync(TestWorld world, Actor owner, string name = "example.com")
@@ -198,3 +235,5 @@ public static class Scenarios
         return await db.VerificationEvidence.Where(e => e.ChallengeId == challengeId).Select(e => e.Id).SingleAsync();
     }
 }
+
+public sealed record OpenDispute(Actor Holder, Actor Claimant, Guid HolderDomainId, Guid HolderEvidenceId, Guid ClaimantDomainId, Guid ClaimantEvidenceId, Guid DisputeId);

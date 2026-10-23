@@ -60,6 +60,12 @@ public sealed class ClaimService
         var domain = challenge.Domain;
         await DbLocks.AcquireAsync(db, $"domain:{domain.Name}", ct);
 
+        // The challenge was loaded before this lock was taken. If another request completed it in the meantime,
+        // stop here with a clear answer instead of inserting a second evidence row.
+        await db.Entry(challenge).ReloadAsync(ct);
+        if (challenge.Status is not (ChallengeStatus.Issued or ChallengeStatus.Checking))
+            throw new ServiceException("ChallengeNotActive", "This challenge was already completed.");
+
         var now = _time.GetUtcNow();
         var evidence = challenge.Method == VerificationMethod.AdminEmail
             ? EmailEvidenceFactory.Create(challenge, now)

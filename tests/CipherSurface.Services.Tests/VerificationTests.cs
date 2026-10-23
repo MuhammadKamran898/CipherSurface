@@ -1,3 +1,4 @@
+using CipherSurface.Data.Entities;
 using CipherSurface.Data.Enums;
 using CipherSurface.Verification;
 using Microsoft.EntityFrameworkCore;
@@ -355,5 +356,143 @@ public class VerificationTests
         await using var db = world.Db.CreateDbContext();
         Assert.Equal(1, await db.VerificationEvidence.CountAsync(e => e.DomainId == domainId));
         Assert.All(outcomes.Where(e => e is not null), e => Assert.IsType<ServiceException>(e));
+    }
+
+    // ------------------------------------------------------------------ one click at a time, and no stuck challenges
+
+    private static async Task MarkChecking(TestWorld world, Actor owner, Guid challengeId, DateTimeOffset attemptStartedAt, bool withPendingAttempt = true)
+    {
+        await using var db = world.Db.CreateDbContext();
+        var challenge = await db.VerificationChallenges.SingleAsync(c => c.Id == challengeId);
+        challenge.Status = ChallengeStatus.Checking;
+        if (withPendingAttempt)
+        {
+            db.VerificationAttempts.Add(new VerificationAttempt
+            {
+                Id = Guid.NewGuid(),
+                ChallengeId = challengeId,
+                UserId = owner.UserId,
+                Ip = "203.0.113.200",
+                StartedAt = attemptStartedAt,
+                Result = null
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task ChallengeWithAClickInFlight_RejectsAnotherClickAsBusy_WithoutCallingTheVerifier()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+        var owner = await world.NewOrgAsync("Org");
+        var (_, challenge) = await Prepare(world, owner, "example.com");
+        await MarkChecking(world, owner, challenge.ChallengeId, world.Time.GetUtcNow().AddSeconds(-10));
+
+        var ex = await Assert.ThrowsAsync<ServiceException>(() => Verify(world, owner, challenge.ChallengeId));
+
+        Assert.Equal("Busy", ex.Code);
+        Assert.Equal(0, world.Dns.Calls);
+    }
+
+    [Fact]
+    public async Task AbandonedClick_IsRecoveredAfterTheLease_AndTheOldAttemptNeverCountsAsAFailure()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+        var owner = await world.NewOrgAsync("Org");
+        var (domainId, challenge) = await Prepare(world, owner, "example.com");
+        await MarkChecking(world, owner, challenge.ChallengeId, world.Time.GetUtcNow());   // a click that then "crashed"
+        world.Time.Advance(TimeSpan.FromMinutes(3));                                       // the lease (2 minutes) has passed
+
+        var result = await Verify(world, owner, challenge.ChallengeId);
+
+        Assert.Equal(CheckOutcome.ProofValid, result.Outcome);
+        Assert.Equal(DomainStatus.Verified, (await world.GetDomainAsync(domainId)).Status);
+        await using var db = world.Db.CreateDbContext();
+        var attempts = await db.VerificationAttempts.OrderBy(a => a.StartedAt).ToListAsync();
+        Assert.Equal(2, attempts.Count);
+        Assert.Equal(CheckOutcome.Inconclusive, attempts[0].Result);   // the abandoned one
+        Assert.Equal(CheckOutcome.ProofValid, attempts[1].Result);
+        Assert.Equal(1, await db.VerificationEvidence.CountAsync(e => e.DomainId == domainId));
+    }
+
+    [Fact]
+    public async Task CheckingWithNoAttemptInFlight_IsRecoveredToo()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+        var owner = await world.NewOrgAsync("Org");
+        var (_, challenge) = await Prepare(world, owner, "example.com");
+        await MarkChecking(world, owner, challenge.ChallengeId, world.Time.GetUtcNow(), withPendingAttempt: false);
+
+        var result = await Verify(world, owner, challenge.ChallengeId);
+
+        Assert.Equal(CheckOutcome.ProofValid, result.Outcome);
+    }
+
+    [Fact]
+    public async Task VerifierThatCrashes_ReleasesTheChallenge_SoTheNextClickWorks()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+        var owner = await world.NewOrgAsync("Org");
+        var (domainId, challenge) = await Prepare(world, owner, "example.com");
+        world.Dns.Script = _ => throw new InvalidOperationException("resolver exploded");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Verify(world, owner, challenge.ChallengeId));
+
+        Assert.Equal(ChallengeStatus.Issued, (await world.GetChallengeAsync(challenge.ChallengeId)).Status);
+        await using (var db = world.Db.CreateDbContext())
+        {
+            var attempt = await db.VerificationAttempts.SingleAsync();
+            Assert.Equal(CheckOutcome.Inconclusive, attempt.Result);       // a crash is never a failed attempt
+            Assert.Equal(0, await db.VerificationEvidence.CountAsync());
+        }
+
+        world.Dns.Script = _ => VerificationObservation.Valid();
+        var result = await Verify(world, owner, challenge.ChallengeId);    // no waiting for the lease needed
+        Assert.Equal(CheckOutcome.ProofValid, result.Outcome);
+        Assert.Equal(DomainStatus.Verified, (await world.GetDomainAsync(domainId)).Status);
+    }
+
+    [Fact]
+    public async Task CancelledClick_ReleasesTheChallenge()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+        var owner = await world.NewOrgAsync("Org");
+        var (_, challenge) = await Prepare(world, owner, "example.com");
+        using var cts = new CancellationTokenSource();
+        world.Dns.Script = _ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => world.Verification.VerifyAsync(owner, challenge.ChallengeId, cts.Token));
+
+        Assert.Equal(ChallengeStatus.Issued, (await world.GetChallengeAsync(challenge.ChallengeId)).Status);
+        await using var db = world.Db.CreateDbContext();
+        Assert.Equal(CheckOutcome.Inconclusive, (await db.VerificationAttempts.SingleAsync()).Result);
+    }
+
+    [Fact]
+    public async Task SimultaneousClicks_RepeatedlyNeverDuplicateEvidence_AndNeverLeakADatabaseError()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+
+        for (var round = 0; round < 8; round++)
+        {
+            var owner = await world.NewOrgAsync($"Org{round}");
+            var (domainId, challenge) = await Prepare(world, owner, $"round{round}.example.com");
+
+            var errors = await Task.WhenAll(
+                Verify(world, owner, challenge.ChallengeId).ContinueWith(t => t.Exception?.GetBaseException()),
+                Verify(world, owner, challenge.ChallengeId).ContinueWith(t => t.Exception?.GetBaseException()),
+                Verify(world, owner, challenge.ChallengeId).ContinueWith(t => t.Exception?.GetBaseException()));
+
+            Assert.All(errors.Where(e => e is not null), e => Assert.IsType<ServiceException>(e));
+            Assert.Contains(errors, e => e is null);                          // one click did succeed
+            Assert.Equal(DomainStatus.Verified, (await world.GetDomainAsync(domainId)).Status);
+            await using var db = world.Db.CreateDbContext();
+            Assert.Equal(1, await db.VerificationEvidence.CountAsync(e => e.DomainId == domainId));
+            Assert.Equal(0, await db.VerificationAttempts.CountAsync(a => a.ChallengeId == challenge.ChallengeId && a.Result == null));   // nothing left hanging
+        }
     }
 }

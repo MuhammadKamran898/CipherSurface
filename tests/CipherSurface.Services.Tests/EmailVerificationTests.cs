@@ -294,4 +294,28 @@ public class EmailVerificationTests
         Assert.True(result.DisputeOpened);
         Assert.Equal(DomainStatus.Verified, (await world.GetDomainAsync(domainA)).Status);
     }
+
+    [Fact]
+    public async Task TwoSimultaneousConfirmations_CreateEvidenceOnce_AndTheLoserGetsAServiceError()
+    {
+        var world = await TestWorld.CreateAsync(_postgres);
+
+        for (var round = 0; round < 5; round++)
+        {
+            var owner = await world.NewOrgAsync($"Org{round}");
+            var colleague = await world.AddMemberAsync(owner.OrganizationId, MembershipRole.Admin);
+            var domainId = await world.AddDomainAsync(owner, $"mail{round}.example.com");
+            var (challengeId, token) = await Scenarios.IssueEmailAsync(world, owner, domainId, $"admin@mail{round}.example.com");
+
+            var errors = await Task.WhenAll(
+                Confirm(world, owner, challengeId, token).ContinueWith(t => t.Exception?.GetBaseException()),
+                Confirm(world, colleague, challengeId, token).ContinueWith(t => t.Exception?.GetBaseException()));
+
+            Assert.Equal(1, errors.Count(e => e is null));
+            Assert.All(errors.Where(e => e is not null), e => Assert.IsType<ServiceException>(e));
+            Assert.Equal(DomainStatus.Verified, (await world.GetDomainAsync(domainId)).Status);
+            await using var db = world.Db.CreateDbContext();
+            Assert.Equal(1, await db.VerificationEvidence.CountAsync(e => e.DomainId == domainId));
+        }
+    }
 }
