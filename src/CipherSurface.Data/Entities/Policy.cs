@@ -42,6 +42,8 @@ public class ScanRun
     public Guid PolicyDecisionId { get; set; }        // NOT NULL + unique: one decision, one scan
     public Guid? ScheduleId { get; set; }
     public DateTimeOffset? ScheduledFor { get; set; }
+    /// <summary>The normalized hosts this scan was authorized for. Never empty. A worker may only ever ask about these.</summary>
+    public string[] Targets { get; set; } = [];
     public ScanRunStatus Status { get; set; } = ScanRunStatus.Queued;
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? CancelRequestedAt { get; set; }

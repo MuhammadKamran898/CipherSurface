@@ -71,6 +71,11 @@ public sealed class TestWorld
     public required EvidenceReverificationService Reverify { get; init; }
     public required EvidenceLifecycleService Lifecycle { get; init; }
     public required DisputeService Disputes { get; init; }
+    public required ScanStartService Scans { get; init; }
+    public required ScanRunService Runs { get; init; }
+    public required ScanPayloadSigner Signer { get; init; }
+    public required GrantService Grants { get; init; }
+    public required OrganizationService Orgs { get; init; }
     public required TestPlatformAdminPolicy AdminPolicy { get; init; }
     public required PlatformAdminGate AdminGate { get; init; }
 
@@ -93,6 +98,7 @@ public sealed class TestWorld
         var sender = new RecordingEmailSender();
         var attemptOptions = options ?? new VerificationOptions();
         var adminPolicy = new TestPlatformAdminPolicy();
+        var signer = new ScanPayloadSigner(Enumerable.Range(1, 32).Select(i => (byte)i).ToArray());
 
         return new TestWorld
         {
@@ -109,6 +115,11 @@ public sealed class TestWorld
             Reverify = new EvidenceReverificationService(db, time, registry, audit),
             Lifecycle = new EvidenceLifecycleService(db, time, audit),
             Disputes = new DisputeService(db, time, audit),
+            Scans = new ScanStartService(db, time, registry, audit),
+            Runs = new ScanRunService(db, time, registry, audit, signer),
+            Signer = signer,
+            Grants = new GrantService(db, time, audit),
+            Orgs = new OrganizationService(db, time, audit),
             AdminPolicy = adminPolicy,
             AdminGate = new PlatformAdminGate(adminPolicy)
         };
@@ -139,6 +150,16 @@ public sealed class TestWorld
 
     public Task<Guid> AddDomainAsync(Actor actor, string name) =>
         Onboarding.AddDomainAsync(actor, name, "v1", "I am authorized to monitor this domain.", CancellationToken.None);
+
+    public async Task AddRuleAsync(Actor by, Guid domainId, ScopeRuleType type, string pattern)
+    {
+        await using var db = Db.CreateDbContext();
+        db.ScopeRules.Add(new ScopeRule { Id = Guid.NewGuid(), DomainId = domainId, RuleType = type, Pattern = pattern, CreatedByUserId = by.UserId, CreatedAt = Start });
+        await db.SaveChangesAsync();
+    }
+
+    public Task<ScanStartResult> StartScanAsync(Actor actor, Guid domainId, params string[] targets) =>
+        Scans.StartAsync(actor, domainId, targets, DecisionTrigger.Manual, null, null, CancellationToken.None);
 
     public async Task<Domain> GetDomainAsync(Guid id)
     {
@@ -207,6 +228,24 @@ public static class Scenarios
         await using var db = world.Db.CreateDbContext();
         var disputeId = await db.DomainDisputes.Where(d => d.ClaimantDomainId == domainB).Select(d => d.Id).SingleAsync();
         return new OpenDispute(a, b, domainA, evidenceA, domainB, evidenceB, disputeId);
+    }
+
+    /// <summary>Verified by DNS, with the whole domain and its subdomains included in scope.</summary>
+    public static async Task<(Guid DomainId, Guid EvidenceId)> ScannableByDnsAsync(TestWorld world, Actor owner, string name = "example.com")
+    {
+        var verified = await VerifiedByDnsAsync(world, owner, name);
+        await world.AddRuleAsync(owner, verified.DomainId, ScopeRuleType.Include, name);
+        await world.AddRuleAsync(owner, verified.DomainId, ScopeRuleType.Include, "*." + name);
+        return verified;
+    }
+
+    /// <summary>A scan that was allowed and handed to a worker.</summary>
+    public static async Task<(Guid RunId, ScanWorkOrder Order)> RunningScanAsync(TestWorld world, Actor owner, Guid domainId, params string[] targets)
+    {
+        var started = await world.StartScanAsync(owner, domainId, targets);
+        if (!started.Allowed) throw new InvalidOperationException($"The scan was denied: {started.FailedCheckCode}");
+        var order = await world.Runs.BeginAsync(started.ScanRunId!.Value, CancellationToken.None);
+        return (started.ScanRunId.Value, order);
     }
 
     public static async Task<(Guid DomainId, Guid EvidenceId)> VerifiedByEmailAsync(TestWorld world, Actor owner, string name = "example.com")

@@ -64,10 +64,12 @@ public class ScanRunConfiguration : IEntityTypeConfiguration<ScanRun>
                 "status NOT IN ('CancelRequested', 'Cancelled') OR cancel_requested_at IS NOT NULL");
             t.HasCheckConstraint("ck_scan_runs_schedule_pair",
                 "(schedule_id IS NULL) = (scheduled_for IS NULL)");
+            t.HasCheckConstraint("ck_scan_runs_has_targets", "cardinality(targets) > 0");
         });
         b.HasKey(x => x.Id);
         b.Property(x => x.Id).ValueGeneratedNever();
         b.Property(x => x.CancelReason).HasMaxLength(200);
+        b.Property(x => x.Targets).HasColumnType("text[]");
         b.Property(x => x.Version).IsRowVersion();
 
         // NOT NULL + unique: a scan cannot exist without an Allow decision, and one

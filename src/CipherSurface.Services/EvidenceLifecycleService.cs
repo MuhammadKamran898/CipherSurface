@@ -105,7 +105,7 @@ public sealed class EvidenceLifecycleService
                 }), ct);
         }
 
-        await DomainStatusService.RecalculateAsync(db, domain, ct);
+        await DomainStatusService.RecalculateAsync(db, domain, ct, _time);
         await tx.CommitAsync(ct);
         return (lapsed, expired);
     }

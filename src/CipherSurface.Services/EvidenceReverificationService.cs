@@ -119,7 +119,7 @@ public sealed class EvidenceReverificationService
                 evidence.LastCheckedAt = now;                       // Inconclusive: record the check, change no state
             await db.SaveChangesAsync(ct);
 
-            var domainStatus = await DomainStatusService.RecalculateAsync(db, evidence.Domain, ct);
+            var domainStatus = await DomainStatusService.RecalculateAsync(db, evidence.Domain, ct, _time);
 
             if (evidence.Status != before)
             {

@@ -72,7 +72,8 @@ CREATE TRIGGER trg_scope_rules_within_domain
     FOR EACH ROW EXECUTE FUNCTION cs_scope_rule_within_domain();
 
 -- ---------------------------------------------------------------------------
--- 4. A scan may only be created from an Allow decision that has not expired.
+-- 4. A scan may only be created from an Allow decision, and not after that decision expired
+--    (judged by the scan row's own created_at, so application and database clocks cannot disagree).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION cs_scan_requires_allow() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -83,8 +84,8 @@ BEGIN
         RAISE EXCEPTION 'scan requires an Allow decision (decision % is %)', NEW.policy_decision_id, o
             USING ERRCODE = 'check_violation';
     END IF;
-    IF e <= now() THEN
-        RAISE EXCEPTION 'policy decision % has expired', NEW.policy_decision_id
+    IF NEW.created_at > e THEN
+        RAISE EXCEPTION 'scan created after policy decision % expired', NEW.policy_decision_id
             USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;

@@ -24,7 +24,7 @@ public static class DomainStatusCalculator
 public static class DomainStatusService
 {
     /// <summary>Recomputes and saves the status. Call inside the same transaction as the evidence change.</summary>
-    public static async Task<DomainStatus> RecalculateAsync(CipherSurfaceDbContext db, Domain domain, CancellationToken ct)
+    public static async Task<DomainStatus> RecalculateAsync(CipherSurfaceDbContext db, Domain domain, CancellationToken ct, TimeProvider? time = null)
     {
         var evidence = await db.VerificationEvidence
             .Where(e => e.DomainId == domain.Id)
@@ -38,6 +38,10 @@ public static class DomainStatusService
         {
             domain.Status = next;
             await db.SaveChangesAsync(ct);
+
+            // A domain that stops being scannable must stop scans already running against it (spec 7.5).
+            if (next is DomainStatus.Pending or DomainStatus.Failed or DomainStatus.Lapsed or DomainStatus.Revoked or DomainStatus.Disputed)
+                await ScanCancellation.RequestForDomainAsync(db, domain.Id, "DomainNotScannable", (time ?? TimeProvider.System).GetUtcNow(), ct);
         }
         return next;
     }

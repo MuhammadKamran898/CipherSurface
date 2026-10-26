@@ -100,7 +100,7 @@ public sealed class ClaimService
         }
 
         await db.SaveChangesAsync(ct);                                    // evidence, challenge, dispute
-        var status = await DomainStatusService.RecalculateAsync(db, domain, ct); // Verified, or Disputed by precedence
+        var status = await DomainStatusService.RecalculateAsync(db, domain, ct, _time); // Verified, or Disputed by precedence
 
         await _audit.AppendAsync(db, new AuditEntry(domain.OrganizationId, "User", actorUserId,
             disputed ? "domain.disputed" : "domain.verified", "Domain", domain.Id,

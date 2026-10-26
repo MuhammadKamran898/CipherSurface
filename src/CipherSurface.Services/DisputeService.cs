@@ -234,7 +234,7 @@ public sealed class DisputeService
             Close(dispute, DisputeStatus.ResolvedClaimant, now, resolvedBy, note);
             await db.SaveChangesAsync(ct);
 
-            foreach (var loser in losers) await DomainStatusService.RecalculateAsync(db, loser, ct);   // frees the name
+            foreach (var loser in losers) await DomainStatusService.RecalculateAsync(db, loser, ct, _time);   // frees the name
 
             // Other open claims against a loser now face the new holder. Each change is audited.
             var loserIds = losers.Select(l => l.Id).ToList();
@@ -249,14 +249,14 @@ public sealed class DisputeService
             }
             if (others.Count > 0) await db.SaveChangesAsync(ct);
 
-            await DomainStatusService.RecalculateAsync(db, claimant, ct);                              // Verified
+            await DomainStatusService.RecalculateAsync(db, claimant, ct, _time);                              // Verified
         }
         else
         {
             revoked = await RevokeEvidenceAsync(db, claimant.Id, ct);
             Close(dispute, DisputeStatus.ResolvedIncumbent, now, resolvedBy, note);
             await db.SaveChangesAsync(ct);
-            await DomainStatusService.RecalculateAsync(db, claimant, ct);                              // Lapsed: a new challenge is needed
+            await DomainStatusService.RecalculateAsync(db, claimant, ct, _time);                              // Lapsed: a new challenge is needed
         }
 
         foreach (var orgId in new[] { incumbent.OrganizationId, claimant.OrganizationId }.Distinct())
