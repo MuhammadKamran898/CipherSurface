@@ -20,5 +20,6 @@
     <ProjectReference Include="../../src/CipherSurface.Data/CipherSurface.Data.csproj" />
     <ProjectReference Include="../../src/CipherSurface.Verification/CipherSurface.Verification.csproj" />
     <ProjectReference Include="../../src/CipherSurface.Services/CipherSurface.Services.csproj" />
+    <ProjectReference Include="../../src/CipherSurface.Auth/CipherSurface.Auth.csproj" />
   </ItemGroup>
 </Project>

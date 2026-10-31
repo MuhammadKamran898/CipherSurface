@@ -1,14 +1,17 @@
 using CipherSurface.Data.Entities;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace CipherSurface.Data;
 
-public class CipherSurfaceDbContext : DbContext
+/// <summary>Identity user tables without Identity roles: roles are per organization and live in Membership.</summary>
+public class CipherSurfaceDbContext : IdentityUserContext<User, Guid>
 {
     public CipherSurfaceDbContext(DbContextOptions<CipherSurfaceDbContext> options) : base(options) { }
 
     public DbSet<Organization> Organizations => Set<Organization>();
-    public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Membership> Memberships => Set<Membership>();
     public DbSet<AuthorizationGrant> AuthorizationGrants => Set<AuthorizationGrant>();
 
@@ -27,6 +30,12 @@ public class CipherSurfaceDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);   // Identity's user, claim, login and token tables
+
+        modelBuilder.Entity<IdentityUserClaim<Guid>>().ToTable("user_claims");
+        modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("user_logins");
+        modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("user_tokens");
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CipherSurfaceDbContext).Assembly);
 
         // Store every enum as a string. Partial-index filters and check constraints in the

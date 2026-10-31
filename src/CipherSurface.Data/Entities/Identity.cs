@@ -1,4 +1,5 @@
 using CipherSurface.Data.Enums;
+using Microsoft.AspNetCore.Identity;
 
 namespace CipherSurface.Data.Entities;
 
@@ -14,11 +15,13 @@ public class Organization
     public List<Domain> Domains { get; set; } = [];
 }
 
-public class User
+/// <summary>
+/// The CipherSurface account. It extends ASP.NET Core Identity's user (id, email, password hash, lockout, security stamp),
+/// so there is one account model and one password store. Organization roles live in Membership, not in Identity roles.
+/// Email is stored lower-case (see the check constraint in UserConfiguration).
+/// </summary>
+public class User : IdentityUser<Guid>
 {
-    public Guid Id { get; set; }
-    public string Email { get; set; } = "";          // stored lower-case
-    public string PasswordHash { get; set; } = "";
     public UserStatus Status { get; set; } = UserStatus.Active;
     public DateTimeOffset CreatedAt { get; set; }
     public uint Version { get; set; }

@@ -72,6 +72,8 @@ public sealed class TestDatabase : IDbContextFactory<CipherSurfaceDbContext>
 
     public TestDatabase(string connectionString) => _connectionString = connectionString;
 
+    public string ConnectionString => _connectionString;
+
     public CipherSurfaceDbContext CreateDbContext() =>
         new(new DbContextOptionsBuilder<CipherSurfaceDbContext>()
             .UseNpgsql(_connectionString)

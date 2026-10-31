@@ -24,7 +24,6 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         b.HasKey(x => x.Id);
         b.Property(x => x.Id).ValueGeneratedNever();
         b.Property(x => x.Email).HasMaxLength(320).IsRequired();
-        b.Property(x => x.PasswordHash).HasMaxLength(200).IsRequired();
         b.Property(x => x.Version).IsRowVersion();
         b.HasIndex(x => x.Email).IsUnique();
     }
