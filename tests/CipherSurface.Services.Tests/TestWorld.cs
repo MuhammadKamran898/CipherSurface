@@ -76,6 +76,7 @@ public sealed class TestWorld
     public required ScanPayloadSigner Signer { get; init; }
     public required GrantService Grants { get; init; }
     public required OrganizationService Orgs { get; init; }
+    public required ScopeRuleService Scope { get; init; }
     public required TestPlatformAdminPolicy AdminPolicy { get; init; }
     public required PlatformAdminGate AdminGate { get; init; }
 
@@ -120,6 +121,7 @@ public sealed class TestWorld
             Signer = signer,
             Grants = new GrantService(db, time, audit),
             Orgs = new OrganizationService(db, time, audit),
+            Scope = new ScopeRuleService(db, time, audit),
             AdminPolicy = adminPolicy,
             AdminGate = new PlatformAdminGate(adminPolicy)
         };

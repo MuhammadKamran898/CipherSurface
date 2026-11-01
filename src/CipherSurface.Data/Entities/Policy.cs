@@ -12,6 +12,7 @@ public class ScopeRule
     public Guid CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RemovedAt { get; set; }   // soft delete
+    public uint Version { get; set; }                // maps to PostgreSQL xmin
 
     public Domain Domain { get; set; } = null!;
 }

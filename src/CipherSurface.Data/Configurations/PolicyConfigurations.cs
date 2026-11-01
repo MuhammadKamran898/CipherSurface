@@ -14,6 +14,7 @@ public class ScopeRuleConfiguration : IEntityTypeConfiguration<ScopeRule>
         b.HasKey(x => x.Id);
         b.Property(x => x.Id).ValueGeneratedNever();
         b.Property(x => x.Pattern).HasMaxLength(255).IsRequired();
+        b.Property(x => x.Version).IsRowVersion();
 
         b.HasOne(x => x.Domain).WithMany(d => d.ScopeRules)
             .HasForeignKey(x => x.DomainId).OnDelete(DeleteBehavior.Restrict);
