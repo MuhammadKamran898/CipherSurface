@@ -1,0 +1,3 @@
+# Normalize line endings in the repository; Visual Studio writes CRLF into solution files.
+* text=auto
+*.sln text eol=crlf

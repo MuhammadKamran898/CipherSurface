@@ -5,22 +5,34 @@ EF Core model and PostgreSQL integrity rules for domain verification and scan au
 
 ## Status
 
-- SQL scripts (`Sql/001`, `Sql/003`): executed against PostgreSQL 16 and passing.
-- C# code: written against the spec but **not compiled yet** (no .NET SDK or NuGet access where it was written).
-  Run `dotnet build` first and fix anything the compiler reports.
-- Targets `net10.0`. On .NET 8 or 9, change `TargetFramework` and the `10.0.*` package versions to match.
+- EF Core owns the relational schema (tables, keys, indexes, check constraints) through migrations.
+- The SQL scripts own what EF cannot express: `Sql/001` the triggers, `Sql/002` the privileges of the
+  restricted application role, `Sql/003` a smoke test of the triggers.
+- `MigrationTests` (in `CipherSurface.Services.Tests`) build a database from nothing with the migrations, apply
+  001 and 002, run 003, and compare the result with the schema every other test uses.
+- Targets `net10.0`.
 
 ## Set up
 
-```bash
-dotnet add package ... # already in the csproj; just: dotnet restore
-export CIPHERSURFACE_DB="Host=localhost;Database=ciphersurface;Username=cipher_owner;Password=..."
-dotnet ef migrations add Initial
-dotnet ef database update
-psql -f Sql/001_integrity.sql        # as the owner role
-psql -f Sql/002_app_role_grants.sql  # after creating the cipher_app role
-psql -f Sql/003_integrity_smoke_test.sql   # optional: proves the rules hold
+Create the migration once, from the repository root (needs `dotnet tool install --global dotnet-ef`). The
+connection string is only read to choose the PostgreSQL provider; nothing connects while a migration is created.
+
+```powershell
+$env:CIPHERSURFACE_DB = "Host=localhost;Database=ciphersurface;Username=cipher_owner;Password=..."
+dotnet ef migrations add InitialCreate --project src/CipherSurface.Data --startup-project src/CipherSurface.Data
 ```
+
+Build a database, always as the owner role and always in this order:
+
+```powershell
+dotnet ef database update --project src/CipherSurface.Data --startup-project src/CipherSurface.Data
+psql -v ON_ERROR_STOP=1 -f src/CipherSurface.Data/Sql/001_integrity.sql        # triggers; safe to re-run
+psql -v ON_ERROR_STOP=1 -f src/CipherSurface.Data/Sql/002_app_role_grants.sql  # after creating the cipher_app role
+psql -v ON_ERROR_STOP=1 -f src/CipherSurface.Data/Sql/003_integrity_smoke_test.sql   # optional: proves the rules hold
+```
+
+Run 001 and 002 again after every migration that adds or renames tables: 002 grants privileges on the tables
+that exist when it runs.
 
 Migrations run as the owner role. The API and workers connect as `cipher_app`, which cannot update,
 delete or truncate append-only tables.

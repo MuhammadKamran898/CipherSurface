@@ -43,6 +43,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         return new TestDatabase(ConnectionStringFor(name, pooled: true));
     }
 
+    /// <summary>A new, completely empty database (no template, no tables). Used to prove the migrations build the schema from nothing.</summary>
+    public async Task<TestDatabase> CreateEmptyDatabaseAsync()
+    {
+        var name = "e_" + Guid.NewGuid().ToString("N");
+        await ExecuteAdminAsync($"CREATE DATABASE \"{name}\"");
+        return new TestDatabase(ConnectionStringFor(name, pooled: true));
+    }
+
     private string ConnectionStringFor(string database, bool pooled) =>
         new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {

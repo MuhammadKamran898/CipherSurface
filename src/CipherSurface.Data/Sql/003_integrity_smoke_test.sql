@@ -7,7 +7,8 @@ BEGIN;
 
 INSERT INTO organizations (id, name, status, created_at) VALUES ('00000000-0000-0000-0000-000000000001', 'Org A', 'Active', now());
 INSERT INTO organizations (id, name, status, created_at) VALUES ('00000000-0000-0000-0000-000000000002', 'Org B', 'Active', now());
-INSERT INTO users (id, email, password_hash, status, created_at) VALUES ('00000000-0000-0000-0000-0000000000a1', 'a@example.com', 'x', 'Active', now());
+INSERT INTO users (id, email, email_confirmed, phone_number_confirmed, two_factor_enabled, lockout_enabled, access_failed_count, password_hash, status, created_at)
+    VALUES ('00000000-0000-0000-0000-0000000000a1', 'a@example.com', false, false, false, true, 0, 'x', 'Active', now());
 INSERT INTO domains (id, organization_id, name, status, created_by_user_id, created_at)
     VALUES ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-000000000001', 'brightcart.com', 'Verified', '00000000-0000-0000-0000-0000000000a1', now());
 
@@ -64,8 +65,8 @@ VALUES ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000
         'Manual', 'Deny', 'PROOF_ABSENT', '{}', '{}', 'h', now(), now() + interval '15 minutes');
 DO $$ BEGIN
     BEGIN
-        INSERT INTO scan_runs (id, policy_decision_id, status, created_at)
-        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-0000000000e1', 'Queued', now());
+        INSERT INTO scan_runs (id, policy_decision_id, targets, status, created_at)
+        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-0000000000e1', ARRAY['brightcart.com'], 'Queued', now());
         RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: scan from Deny decision';
     EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
