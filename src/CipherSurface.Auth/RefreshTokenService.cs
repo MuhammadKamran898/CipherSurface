@@ -94,6 +94,18 @@ public sealed class RefreshTokenService
     }
 
     /// <summary>Logout: ends the session that owns this token. Unknown tokens are ignored.</summary>
+    /// <summary>
+    /// True while the session (refresh-token family) behind an access token has a live token. Logging out, changing the
+    /// password, reuse detection and disabling the account all end the session, so access tokens stop working at once
+    /// instead of at their expiry.
+    /// </summary>
+    public async Task<bool> IsSessionActiveAsync(Guid userId, Guid familyId, CancellationToken ct)
+    {
+        var now = _time.GetUtcNow();
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        return await db.RefreshTokens.AnyAsync(t => t.UserId == userId && t.FamilyId == familyId && t.RevokedAt == null && t.ExpiresAt > now, ct);
+    }
+
     public async Task RevokeSessionAsync(string? presentedToken, string reason, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(presentedToken)) return;

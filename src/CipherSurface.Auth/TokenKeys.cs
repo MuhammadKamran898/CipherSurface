@@ -17,12 +17,35 @@ public sealed class TokenKeys
     public RsaSecurityKey ValidationKey { get; }
     public string PublicPem { get; }
 
-    private TokenKeys(string keyId, RsaSecurityKey? signingKey, RsaSecurityKey validationKey, string publicPem)
+    private readonly IReadOnlyList<RsaSecurityKey> _retired;
+
+    /// <summary>
+    /// Every key a token may have been signed with: the current one first, then keys retired by a rotation that are
+    /// still trusted for tokens issued before it. Tokens name their key in the "kid" header.
+    /// </summary>
+    public IReadOnlyList<RsaSecurityKey> ValidationKeys => [ValidationKey, .. _retired];
+
+    private TokenKeys(string keyId, RsaSecurityKey? signingKey, RsaSecurityKey validationKey, string publicPem, IReadOnlyList<RsaSecurityKey>? retired = null)
     {
         KeyId = keyId;
         SigningKey = signingKey;
         ValidationKey = validationKey;
         PublicPem = publicPem;
+        _retired = retired ?? [];
+    }
+
+    /// <summary>
+    /// Rotation: keep trusting tokens signed by an old key (public half only) until they have expired, then drop it from
+    /// the configuration. The old key can validate but never sign.
+    /// </summary>
+    public TokenKeys WithRetiredPublicKey(string publicPem, string keyId)
+    {
+        if (string.IsNullOrWhiteSpace(keyId) || keyId == KeyId || _retired.Any(k => k.KeyId == keyId))
+            throw new ArgumentException("A retired key needs its own key id.", nameof(keyId));
+        var rsa = RSA.Create();
+        rsa.ImportFromPem(publicPem);
+        RequireStrong(rsa);
+        return new TokenKeys(KeyId, SigningKey, ValidationKey, PublicPem, [.. _retired, new RsaSecurityKey(rsa) { KeyId = keyId }]);
     }
 
     public static TokenKeys FromPrivatePem(string privatePem, string keyId)

@@ -64,7 +64,7 @@ public sealed class AccessTokenService
         ValidateAudience = true,
         ValidAudience = _options.Audience,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = _keys.ValidationKey,
+        IssuerSigningKeys = _keys.ValidationKeys,
         RequireSignedTokens = true,
         RequireExpirationTime = true,
         ValidAlgorithms = new[] { SecurityAlgorithms.RsaSha256 },

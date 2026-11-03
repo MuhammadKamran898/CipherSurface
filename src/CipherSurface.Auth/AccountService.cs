@@ -43,7 +43,18 @@ public sealed class AccountService
     // ------------------------------------------------------------------ register
 
     /// <summary>Creates the account, its organization and the Owner membership in one transaction.</summary>
-    public async Task<RegistrationResult> RegisterAsync(string? email, string? password, string? organizationName, CancellationToken ct)
+    public Task<RegistrationResult> RegisterAsync(string? email, string? password, string? organizationName, CancellationToken ct) =>
+        RegisterCoreAsync(email, password, organizationName, onlyIfNoUsersExist: false, ct);
+
+    /// <summary>
+    /// Controlled setup: creates the very first account and its organization, and only while no account exists at all.
+    /// Two simultaneous calls cannot both win. Once any account exists this always fails with SetupClosed, so the
+    /// setup path cannot be used to open registration. Callers must authenticate the setup request themselves.
+    /// </summary>
+    public Task<RegistrationResult> RegisterFirstOwnerAsync(string? email, string? password, string? organizationName, CancellationToken ct) =>
+        RegisterCoreAsync(email, password, organizationName, onlyIfNoUsersExist: true, ct);
+
+    private async Task<RegistrationResult> RegisterCoreAsync(string? email, string? password, string? organizationName, bool onlyIfNoUsersExist, CancellationToken ct)
     {
         var normalizedEmail = NormalizeEmail(email);
         var orgName = (organizationName ?? string.Empty).Trim();
@@ -52,6 +63,13 @@ public sealed class AccountService
 
         var now = _time.GetUtcNow();
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        if (onlyIfNoUsersExist)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"setup:first-owner"}, 0))", ct);
+            if (await _db.Users.AnyAsync(ct))
+                throw new ServiceException("SetupClosed", "Setup is already complete.");
+        }
 
         var user = new User { Id = Guid.NewGuid(), UserName = normalizedEmail, Email = normalizedEmail, Status = UserStatus.Active, CreatedAt = now };
         var created = await _users.CreateAsync(user, password ?? string.Empty);
@@ -63,8 +81,9 @@ public sealed class AccountService
         _db.Memberships.Add(new Membership { Id = Guid.NewGuid(), OrganizationId = organization.Id, UserId = user.Id, Role = MembershipRole.Owner, CreatedAt = now });
         await _db.SaveChangesAsync(ct);
 
-        await _audit.AppendAsync(_db, new AuditEntry(organization.Id, "User", user.Id, "organization.created", "Organization", organization.Id,
-            new Dictionary<string, object?> { ["name"] = orgName }), ct);
+        var detail = new Dictionary<string, object?> { ["name"] = orgName };
+        if (onlyIfNoUsersExist) detail["setup"] = "first-owner";
+        await _audit.AppendAsync(_db, new AuditEntry(organization.Id, "User", user.Id, "organization.created", "Organization", organization.Id, detail), ct);
         await tx.CommitAsync(ct);
         return new RegistrationResult(user.Id, organization.Id);
     }
