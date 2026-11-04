@@ -7,6 +7,9 @@ public enum OrganizationStatus { Active, Suspended }
 public enum UserStatus { Active, Disabled }
 public enum MembershipRole { Owner, Admin, Analyst, Viewer }
 
+/// <summary>Pending until the invitation is accepted, revoked, or replaced by a newer one. Expiry is not a stored state: a Pending invitation whose time has passed is expired.</summary>
+public enum InvitationStatus { Pending, Accepted, Revoked, Superseded }
+
 public enum GrantType { SelfAttestation, MultiParty }
 public enum GrantStatus { Active, Revoked }
 

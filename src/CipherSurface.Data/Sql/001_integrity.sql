@@ -42,7 +42,7 @@ DECLARE t text;
 BEGIN
     FOREACH t IN ARRAY ARRAY['organizations', 'users', 'domains', 'authorization_grants', 'domain_disputes',
                              'verification_challenges', 'verification_attempts', 'verification_evidence',
-                             'scope_rules', 'scan_runs']
+                             'scope_rules', 'scan_runs', 'invitations']
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS trg_%s_no_delete ON %I', t, t);
         EXECUTE format('CREATE TRIGGER trg_%s_no_delete BEFORE DELETE ON %I
@@ -95,3 +95,28 @@ DROP TRIGGER IF EXISTS trg_scan_runs_requires_allow ON scan_runs;
 CREATE TRIGGER trg_scan_runs_requires_allow
     BEFORE INSERT ON scan_runs
     FOR EACH ROW EXECUTE FUNCTION cs_scan_requires_allow();
+
+-- ---------------------------------------------------------------------------
+-- 4. An invitation grants one role to one email in one organization, with one token, until one expiry. None of that may
+--    be changed after the fact, and an invitation that is no longer Pending (accepted, revoked, superseded) is frozen.
+--    Only a Pending invitation may change, and only by being resolved.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION cs_invitations_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.status <> 'Pending' THEN
+        RAISE EXCEPTION 'invitation % is % and cannot be changed', OLD.id, OLD.status
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF NEW.organization_id <> OLD.organization_id OR NEW.email <> OLD.email OR NEW.role <> OLD.role
+       OR NEW.token_hash <> OLD.token_hash OR NEW.created_by_user_id <> OLD.created_by_user_id
+       OR NEW.created_at <> OLD.created_at OR NEW.expires_at <> OLD.expires_at THEN
+        RAISE EXCEPTION 'the organization, email, role, token and expiry of invitation % cannot be changed', OLD.id
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_invitations_immutable ON invitations;
+CREATE TRIGGER trg_invitations_immutable BEFORE UPDATE ON invitations
+    FOR EACH ROW EXECUTE FUNCTION cs_invitations_immutable();

@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Auth creates accounts and memberships in the same transactions the services use (locks, manager checks). -->
+    <InternalsVisibleTo Include="CipherSurface.Auth" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../CipherSurface.Data/CipherSurface.Data.csproj" />
     <ProjectReference Include="../CipherSurface.Verification/CipherSurface.Verification.csproj" />
     <ProjectReference Include="../CipherSurface.Policy/CipherSurface.Policy.csproj" />

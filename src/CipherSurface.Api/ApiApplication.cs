@@ -41,7 +41,11 @@ public static class ApiApplication
         var services = builder.Services;
         services.AddSingleton(settings);
         services.AddCipherSurfaceData(settings.ConnectionString);
-        services.AddCipherSurfaceAuth(jwt, keys);
+        services.AddCipherSurfaceAuth(jwt, keys, new InvitationOptions
+        {
+            Lifetime = TimeSpan.FromDays(settings.InvitationLifetimeDays),
+            MaxPendingPerOrganization = settings.MaxPendingInvitationsPerOrganization
+        });
         services.AddSingleton<IPlatformAdminPolicy>(new ConfiguredPlatformAdminPolicy(settings.PlatformAdminUserIds));
         services.AddSingleton<PlatformAdminGate>();
         services.AddScoped<OrganizationContextResolver>();
@@ -116,6 +120,7 @@ public static class ApiApplication
         // (a test lists every anonymous endpoint, so a new one cannot be opened by accident).
         var api = app.MapGroup("/api/v1").RequireAuthorization();
         AuthEndpoints.Map(api);
+        InvitationEndpoints.Map(api);
         mapExtraEndpoints?.Invoke(app);
         return app;
     }
@@ -137,6 +142,9 @@ public static class ApiApplication
                 RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.GlobalRequestsPerMinute)));
             o.AddPolicy(AuthEndpoints.RateLimitPolicy, http =>
                 RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.AuthRequestsPerMinute)));
+            // Preview and accept take a secret token, so they get their own per-client limit, separate from login.
+            o.AddPolicy(InvitationEndpoints.RateLimitPolicy, http =>
+                RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.InvitationRequestsPerMinute)));
         });
     }
 

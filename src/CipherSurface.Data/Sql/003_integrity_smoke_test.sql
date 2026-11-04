@@ -71,5 +71,53 @@ DO $$ BEGIN
     EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
 
+-- 7. Invitations: one pending per organization and email, never Owner, core fields fixed, resolved ones frozen, no delete.
+INSERT INTO invitations (id, organization_id, email, role, token_hash, status, created_by_user_id, created_at, expires_at)
+VALUES ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-000000000001', 'invitee@example.com', 'Analyst',
+        repeat('a', 64), 'Pending', '00000000-0000-0000-0000-0000000000a1', now(), now() + interval '7 days');
+DO $$ BEGIN
+    BEGIN
+        INSERT INTO invitations (id, organization_id, email, role, token_hash, status, created_by_user_id, created_at, expires_at)
+        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'invitee@example.com', 'Viewer',
+                repeat('b', 64), 'Pending', '00000000-0000-0000-0000-0000000000a1', now(), now() + interval '7 days');
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: second pending invitation';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO invitations (id, organization_id, email, role, token_hash, status, created_by_user_id, created_at, expires_at)
+        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'boss@example.com', 'Owner',
+                repeat('c', 64), 'Pending', '00000000-0000-0000-0000-0000000000a1', now(), now() + interval '7 days');
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: invitation for Owner';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO invitations (id, organization_id, email, role, token_hash, status, created_by_user_id, created_at, expires_at)
+        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'sneaky@example.com', 'owner',
+                repeat('d', 64), 'Pending', '00000000-0000-0000-0000-0000000000a1', now(), now() + interval '7 days');
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: invitation for a lower-case owner';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO invitations (id, organization_id, email, role, token_hash, status, created_by_user_id, created_at, expires_at)
+        VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'badhash@example.com', 'Viewer',
+                repeat('Z', 64), 'Pending', '00000000-0000-0000-0000-0000000000a1', now(), now() + interval '7 days');
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: invitation with a malformed token hash';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        UPDATE invitations SET email = 'someone-else@example.com' WHERE id = '00000000-0000-0000-0000-0000000000f1';
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: invitation email change';
+    EXCEPTION WHEN restrict_violation THEN NULL; END;
+    BEGIN
+        DELETE FROM invitations WHERE id = '00000000-0000-0000-0000-0000000000f1';
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: invitation delete';
+    EXCEPTION WHEN restrict_violation THEN NULL; END;
+END $$;
+UPDATE invitations SET status = 'Revoked', resolved_at = now(), resolved_by_user_id = '00000000-0000-0000-0000-0000000000a1'
+WHERE id = '00000000-0000-0000-0000-0000000000f1';
+DO $$ BEGIN
+    BEGIN
+        UPDATE invitations SET status = 'Pending', resolved_at = NULL, resolved_by_user_id = NULL
+        WHERE id = '00000000-0000-0000-0000-0000000000f1';
+        RAISE EXCEPTION 'EXPECTED FAILURE DID NOT HAPPEN: reopening a resolved invitation';
+    EXCEPTION WHEN restrict_violation THEN NULL; END;
+END $$;
+
 ROLLBACK;
 SELECT 'all integrity checks behaved as expected' AS result;

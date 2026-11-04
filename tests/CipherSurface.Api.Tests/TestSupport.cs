@@ -49,6 +49,14 @@ public sealed class FixedTime(DateTimeOffset now) : TimeProvider
     public override DateTimeOffset GetUtcNow() => now;
 }
 
+/// <summary>A clock tests can move forward (for example past an invitation's expiry).</summary>
+public sealed class AdjustableTime(DateTimeOffset now) : TimeProvider
+{
+    private DateTimeOffset _now = now;
+    public override DateTimeOffset GetUtcNow() => _now;
+    public void Advance(TimeSpan by) => _now += by;
+}
+
 public static class TokenForge
 {
     /// <summary>An access token signed with the given keys, for the given user and session, at the given clock.</summary>

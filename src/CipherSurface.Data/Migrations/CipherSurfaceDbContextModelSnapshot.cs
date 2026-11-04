@@ -317,6 +317,101 @@ namespace CipherSurface.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("CipherSurface.Data.Entities.Invitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_user_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_invitations");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_invitations_created_by_user_id");
+
+                    b.HasIndex("ResolvedByUserId")
+                        .HasDatabaseName("ix_invitations_resolved_by_user_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_invitations_token_hash");
+
+                    b.HasIndex("OrganizationId", "CreatedAt")
+                        .HasDatabaseName("ix_invitations_organization");
+
+                    b.HasIndex("OrganizationId", "Email")
+                        .IsUnique()
+                        .HasDatabaseName("ux_invitations_one_pending")
+                        .HasFilter("status = 'Pending'");
+
+                    b.ToTable("invitations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_invitations_email_lower", "email = lower(email)");
+
+                            t.HasCheckConstraint("ck_invitations_expiry_after_creation", "expires_at > created_at");
+
+                            t.HasCheckConstraint("ck_invitations_resolved_consistent", "(status = 'Pending') = (resolved_at IS NULL) AND (resolved_at IS NULL) = (resolved_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_invitations_role_invitable", "role IN ('Admin', 'Analyst', 'Viewer')");
+
+                            t.HasCheckConstraint("ck_invitations_token_hash_hex", "token_hash ~ '^[0-9a-f]{64}$'");
+                        });
+                });
+
             modelBuilder.Entity("CipherSurface.Data.Entities.Membership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1298,6 +1393,31 @@ namespace CipherSurface.Data.Migrations
                     b.Navigation("ClaimantDomain");
 
                     b.Navigation("IncumbentDomain");
+                });
+
+            modelBuilder.Entity("CipherSurface.Data.Entities.Invitation", b =>
+                {
+                    b.HasOne("CipherSurface.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invitations_asp_net_users_created_by_user_id");
+
+                    b.HasOne("CipherSurface.Data.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invitations_organizations_organization_id");
+
+                    b.HasOne("CipherSurface.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_invitations_asp_net_users_resolved_by_user_id");
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("CipherSurface.Data.Entities.Membership", b =>

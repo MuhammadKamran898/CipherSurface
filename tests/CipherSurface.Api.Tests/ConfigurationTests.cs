@@ -92,6 +92,57 @@ public class ConfigurationTests
         Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(values)));
     }
 
+    // ------------------------------------------------------------------ invitations
+
+    [Fact]
+    public void InvitationDefaults_AreSevenDays_AHundredOpen_AndNoLink()
+    {
+        var settings = ApiSettings.Load(Config(Valid()));
+
+        Assert.Equal(7, settings.InvitationLifetimeDays);
+        Assert.Equal(100, settings.MaxPendingInvitationsPerOrganization);
+        Assert.Null(settings.InvitationAcceptBaseUrl);
+        Assert.Equal(10, settings.InvitationRequestsPerMinute);
+    }
+
+    [Theory]
+    [InlineData("CipherSurface:Invitations:LifetimeDays", "0")]
+    [InlineData("CipherSurface:Invitations:LifetimeDays", "31")]
+    [InlineData("CipherSurface:Invitations:LifetimeDays", "soon")]
+    [InlineData("CipherSurface:Invitations:MaxPendingPerOrganization", "0")]
+    [InlineData("CipherSurface:Invitations:MaxPendingPerOrganization", "1001")]
+    [InlineData("CipherSurface:RateLimiting:InvitationRequestsPerMinute", "0")]
+    public void InvitationSettingsOutOfRangeAreRejected(string key, string value)
+    {
+        Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(), (key, value)))));
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com/accept-invitation", "https://app.example.com/accept-invitation")]
+    [InlineData("https://app.example.com/accept-invitation/", "https://app.example.com/accept-invitation")]
+    [InlineData("http://localhost:4200/accept-invitation", "http://localhost:4200/accept-invitation")]
+    public void AGoodAcceptUrlIsNormalized(string configured, string expected)
+    {
+        var settings = ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Invitations:AcceptBaseUrl", configured))));
+
+        Assert.Equal(expected, settings.InvitationAcceptBaseUrl);
+    }
+
+    [Theory]
+    [InlineData("http://app.example.com/accept")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("https://app.example.com/accept?x=1")]
+    [InlineData("https://app.example.com/accept#frag")]
+    [InlineData("https://user:pass@app.example.com/accept")]
+    [InlineData("/relative/path")]
+    [InlineData("ftp://app.example.com/accept")]
+    public void AnUnsafeAcceptUrlIsRejected(string configured)
+    {
+        var ex = Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Invitations:AcceptBaseUrl", configured)))));
+
+        Assert.Contains("AcceptBaseUrl", ex.Message);
+    }
+
     // ------------------------------------------------------------------ the key file
 
     private static ApiSettings SettingsFor(string keyFile, params (string, string?)[] extra) => ApiSettings.Load(Config(With(Valid(keyFile), extra)));

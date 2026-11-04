@@ -34,7 +34,13 @@ public sealed class ApiSettings
     public IReadOnlyList<string> CorsOrigins { get; private init; } = [];
     public IReadOnlyList<IPAddress> KnownProxies { get; private init; } = [];
     public int AuthRequestsPerMinute { get; private init; } = 10;
+    public int InvitationRequestsPerMinute { get; private init; } = 10;
     public int GlobalRequestsPerMinute { get; private init; } = 300;
+    public int InvitationLifetimeDays { get; private init; } = 7;
+    public int MaxPendingInvitationsPerOrganization { get; private init; } = 100;
+
+    /// <summary>Where the web app handles invitation links, for example https://app.example.com/accept-invitation. The token is appended after "#" so it never travels to a server in a URL.</summary>
+    public string? InvitationAcceptBaseUrl { get; private init; }
 
     public static ApiSettings Load(IConfiguration configuration)
     {
@@ -93,7 +99,22 @@ public sealed class ApiSettings
         }
 
         var authLimit = ReadPositive(section, "RateLimiting:AuthRequestsPerMinute", 10, problems);
+        var invitationLimit = ReadPositive(section, "RateLimiting:InvitationRequestsPerMinute", 10, problems);
         var globalLimit = ReadPositive(section, "RateLimiting:GlobalRequestsPerMinute", 300, problems);
+
+        var lifetimeDays = ReadPositive(section, "Invitations:LifetimeDays", 7, problems);
+        if (lifetimeDays > 30) problems.Add($"{SectionName}:Invitations:LifetimeDays must be between 1 and 30.");
+        var maxPending = ReadPositive(section, "Invitations:MaxPendingPerOrganization", 100, problems);
+        if (maxPending > 1000) problems.Add($"{SectionName}:Invitations:MaxPendingPerOrganization must be between 1 and 1000.");
+
+        var acceptBase = section["Invitations:AcceptBaseUrl"];
+        string? acceptBaseUrl = null;
+        if (!string.IsNullOrWhiteSpace(acceptBase))
+        {
+            acceptBaseUrl = NormalizeAcceptBaseUrl(acceptBase);
+            if (acceptBaseUrl is null)
+                problems.Add($"{SectionName}:Invitations:AcceptBaseUrl must be an https URL (http only for localhost) without a query string or fragment.");
+        }
 
         if (problems.Count > 0) throw new ApiConfigurationException(problems);
 
@@ -110,7 +131,11 @@ public sealed class ApiSettings
             CorsOrigins = origins,
             KnownProxies = proxies,
             AuthRequestsPerMinute = authLimit,
-            GlobalRequestsPerMinute = globalLimit
+            InvitationRequestsPerMinute = invitationLimit,
+            GlobalRequestsPerMinute = globalLimit,
+            InvitationLifetimeDays = lifetimeDays,
+            MaxPendingInvitationsPerOrganization = maxPending,
+            InvitationAcceptBaseUrl = acceptBaseUrl
         };
     }
 
@@ -126,6 +151,16 @@ public sealed class ApiSettings
         if (uri.Scheme is not ("http" or "https")) return null;
         if (uri.PathAndQuery != "/" || !string.IsNullOrEmpty(uri.Fragment) || !string.IsNullOrEmpty(uri.UserInfo)) return null;
         return uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
+    }
+
+    private static string? NormalizeAcceptBaseUrl(string value)
+    {
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)) return null;
+        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || !string.IsNullOrEmpty(uri.UserInfo)) return null;
+        var secure = uri.Scheme == Uri.UriSchemeHttps;
+        var localHttp = uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
+        if (!secure && !localHttp) return null;
+        return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
     }
 
     private static int ReadPositive(IConfigurationSection section, string key, int fallback, List<string> problems)

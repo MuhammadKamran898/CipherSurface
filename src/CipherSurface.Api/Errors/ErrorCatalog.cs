@@ -18,23 +18,27 @@ public static class ErrorCatalog
         ["OrganizationNameRequired"] = 400, ["OrganizationNameTooLong"] = 400, ["PatternInvalid"] = 400,
         ["PatternOutsideDomain"] = 400, ["ReasonRequired"] = 400, ["ReasonTooLong"] = 400, ["RecipientNotAllowed"] = 400,
         ["WeakPassword"] = 400,
-        ["InvalidRequest"] = 400, ["InvalidOrganizationId"] = 400, ["OrganizationRequired"] = 400, ["CurrentPasswordIncorrect"] = 400,
+        ["InvalidRole"] = 400, ["InvalidRequest"] = 400, ["InvalidOrganizationId"] = 400, ["OrganizationRequired"] = 400, ["CurrentPasswordIncorrect"] = 400,
 
         // 401: not authenticated
         ["InvalidCredentials"] = 401, ["InvalidRefreshToken"] = 401, ["Unauthorized"] = 401,
 
         // 403: authenticated but not allowed
-        ["NotAllowed"] = 403, ["OrganizationSuspended"] = 403, ["AccountDisabled"] = 403, ["NoOrganization"] = 403,
+        ["NotAllowed"] = 403, ["OrganizationSuspended"] = 403, ["AccountDisabled"] = 403, ["NoOrganization"] = 403, ["InvitationEmailMismatch"] = 403,
         ["SetupTokenInvalid"] = 403, ["Forbidden"] = 403,
 
         // 404
-        ["NotFound"] = 404, ["SetupDisabled"] = 404,
+        ["NotFound"] = 404, ["SetupDisabled"] = 404, ["InvalidInvitation"] = 404,
+
+        // 410: it existed, and is gone for good
+        ["InvitationExpired"] = 410,
 
         // 405, 413, 415
         ["MethodNotAllowed"] = 405, ["PayloadTooLarge"] = 413, ["UnsupportedMediaType"] = 415,
 
         // 409: the request is fine but the current state does not allow it
-        ["AlreadyActive"] = 409, ["AlreadySuspended"] = 409, ["Busy"] = 409, ["ChallengeExpired"] = 409, ["EmailTaken"] = 409,
+        ["AlreadyActive"] = 409, ["AlreadySuspended"] = 409, ["Busy"] = 409, ["ChallengeExpired"] = 409, ["EmailTaken"] = 409, ["AccountExists"] = 409, ["AlreadyMember"] = 409,
+        ["InvitationNoLongerValid"] = 409, ["InvitationNotPending"] = 409, ["TooManyInvitations"] = 409,
         ["ChallengeNotActive"] = 409, ["ClaimantHasNoValidProof"] = 409, ["DisputeNotOpen"] = 409, ["DomainExists"] = 409,
         ["DomainNotVerifiable"] = 409, ["NoActiveGrant"] = 409, ["RuleExists"] = 409, ["RuleRemoved"] = 409,
         ["RunNotQueued"] = 409, ["RunNotRunning"] = 409, ["SetupClosed"] = 409, ["StartDeadlineExpired"] = 409,

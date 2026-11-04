@@ -13,6 +13,7 @@ public class CipherSurfaceDbContext : IdentityUserContext<User, Guid>
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<AuthorizationGrant> AuthorizationGrants => Set<AuthorizationGrant>();
 
     public DbSet<Domain> Domains => Set<Domain>();

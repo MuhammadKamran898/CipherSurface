@@ -14,7 +14,7 @@ namespace CipherSurface.Api.Endpoints;
 /// <summary>
 /// Thin HTTP layer over AccountService. Registration is invite-only: there is no public sign-up. The only way to create
 /// an account here is the one-time setup of the first owner, protected by a setup token from configuration, and it closes
-/// itself as soon as any account exists. Further members arrive through invitations (a later step).
+/// itself as soon as any account exists. Every later member arrives by invitation (see InvitationEndpoints).
 /// </summary>
 public static class AuthEndpoints
 {

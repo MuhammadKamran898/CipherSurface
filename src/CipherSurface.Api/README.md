@@ -4,7 +4,7 @@ The ASP.NET Core host. It is a thin HTTP layer over the existing services: it va
 caller, builds the `Actor` on the server, calls a service, and maps the result (or the `ServiceException` code) to HTTP.
 It contains no business rules and opens no database transactions of its own.
 
-## Batch 1 endpoints
+## Endpoints
 
 | Route | Login | Purpose |
 |---|---|---|
@@ -15,9 +15,33 @@ It contains no business rules and opens no database transactions of its own.
 | `POST /api/v1/auth/change-password` | yes | Changes the password and ends every session. |
 | `GET /api/v1/me` | yes | The user and every organization they belong to. |
 | `GET /api/v1/organization` | yes | The organization of this request, with the user's real role. |
+| `POST /api/v1/invitations` | Owner/Admin | Invites an email as Admin, Analyst or Viewer. Returns the one-time token (and a link) once. |
+| `GET /api/v1/invitations` | Owner/Admin | The organization's invitations and their states. Never a token. |
+| `DELETE /api/v1/invitations/{id}` | Owner/Admin | Revokes a pending invitation. |
+| `POST /api/v1/invitations/preview` | token | What a link is for (organization, email, role, expiry). Changes nothing. |
+| `POST /api/v1/invitations/accept` | token | A new person accepts and chooses a password, which creates their account. |
+| `POST /api/v1/invitations/accept/existing` | yes + token | A signed-in account whose email matches the invitation joins. |
 
-There is no public registration. More members arrive through invitations (a later step); until then the only account
-creation path is the one-time setup above.
+## Registration is invitation-only
+
+There is no public sign-up. An account comes from exactly one of two places: the one-time setup of the first owner, or
+an invitation.
+
+- An Owner or Admin invites an email address. The Owner role can never be invited; it exists only through setup.
+- The invitation carries a one-time token. Only its SHA-256 hash is stored, the raw token is returned once to the
+  inviter, and it is never written to logs, audit entries or later responses.
+- The token is sent in a request body, never in a URL. The link puts it after `#`, which browsers never send to a server.
+- Opening the link only previews. Accepting is an explicit `POST`.
+- A person without an account accepts by choosing a password. Their email is **not** marked verified: there is no email
+  provider yet, so holding the link is all that proves anything. A person who already has an account must be signed in
+  with the same email.
+- One pending invitation per organization and email. Inviting again supersedes the earlier one, whose token stops working.
+- Acceptance runs in one transaction under an advisory lock and re-checks the status, expiry, the organization and that the
+  inviter is still an Owner or Admin.
+- Invitations last 7 days by default and the previews and accepts are rate limited per client.
+
+Until an email provider exists, the inviter delivers the link. When one is added, requiring a verified email before an
+existing account may accept is the next hardening step.
 
 ## Organization context
 
@@ -53,7 +77,11 @@ on invalid configuration, and error messages never contain secrets.
 | `CipherSurface:PlatformAdmins:UserIds:N` | no | User ids that are platform administrators. Empty means nobody is. |
 | `CipherSurface:Cors:AllowedOrigins:N` | no | Exact origins such as `https://app.example.com`. Empty means no cross-origin access. |
 | `CipherSurface:ForwardedHeaders:KnownProxies:N` | no | Proxy IPs trusted to set `X-Forwarded-For`. Empty means the header is ignored. |
+| `CipherSurface:Invitations:LifetimeDays` | no | 1 to 30, default 7. |
+| `CipherSurface:Invitations:MaxPendingPerOrganization` | no | Open invitations one organization may hold, 1 to 1000, default 100. |
+| `CipherSurface:Invitations:AcceptBaseUrl` | no | Where the web app handles links, for example `https://app.example.com/accept-invitation` (`http` only for localhost). Unset means no link is made, only the token. |
 | `CipherSurface:RateLimiting:AuthRequestsPerMinute` | no | Default 10 per client address, for the auth and setup endpoints. |
+| `CipherSurface:RateLimiting:InvitationRequestsPerMinute` | no | Default 10 per client address, for invitation preview and accept. |
 | `CipherSurface:RateLimiting:GlobalRequestsPerMinute` | no | Default 300 per client address. |
 
 ### Creating a development signing key

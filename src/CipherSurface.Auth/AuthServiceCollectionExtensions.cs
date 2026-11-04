@@ -9,15 +9,16 @@ namespace CipherSurface.Auth;
 public static class AuthServiceCollectionExtensions
 {
     /// <summary>
-    /// Call after AddCipherSurfaceData. Registers Identity (passwords, lockout), the token services and AccountService.
+    /// Call after AddCipherSurfaceData. Registers Identity (passwords, lockout), the token services, AccountService and InvitationService.
     /// Passwords: at least 12 characters, no composition rules (length is what matters). Lockout: 5 failures, 15 minutes.
     /// Platform administrators are NOT part of this: they are decided on the server by IPlatformAdminPolicy.
     /// </summary>
-    public static IServiceCollection AddCipherSurfaceAuth(this IServiceCollection services, JwtOptions jwt, TokenKeys keys)
+    public static IServiceCollection AddCipherSurfaceAuth(this IServiceCollection services, JwtOptions jwt, TokenKeys keys, InvitationOptions? invitations = null)
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(jwt);
         services.AddSingleton(keys);
+        services.AddSingleton(invitations ?? new InvitationOptions());
         services.TryAddSingleton<AuditLogWriter>();
 
         services.AddIdentityCore<User>(o =>
@@ -37,6 +38,7 @@ public static class AuthServiceCollectionExtensions
         services.AddSingleton<AccessTokenService>();
         services.AddScoped<RefreshTokenService>();
         services.AddScoped<AccountService>();
+        services.AddScoped<InvitationService>();
         return services;
     }
 }

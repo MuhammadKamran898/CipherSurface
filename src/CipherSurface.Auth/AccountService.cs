@@ -150,7 +150,7 @@ public sealed class AccountService
         return new AuthTokens(access.Token, access.ExpiresAt, session.Token, session.ExpiresAt);
     }
 
-    private static string NormalizeEmail(string? email)
+    internal static string NormalizeEmail(string? email)
     {
         var candidate = (email ?? string.Empty).Trim().ToLowerInvariant();
         if (candidate.Length is 0 or > 320 || !MailAddress.TryCreate(candidate, out var parsed) || parsed.Address != candidate || !candidate.Contains('.'))
@@ -158,7 +158,7 @@ public sealed class AccountService
         return candidate;
     }
 
-    private static ServiceException Translate(IdentityResult result)
+    internal static ServiceException Translate(IdentityResult result)
     {
         var codes = result.Errors.Select(e => e.Code).ToList();
         if (codes.Any(c => c is "DuplicateEmail" or "DuplicateUserName"))

@@ -23,7 +23,7 @@ public class MigrationTests
     private static readonly string[] NoDeleteTables =
     [
         "organizations", "users", "domains", "authorization_grants", "domain_disputes", "verification_challenges",
-        "verification_attempts", "verification_evidence", "scope_rules", "scan_runs"
+        "verification_attempts", "verification_evidence", "scope_rules", "scan_runs", "invitations"
     ];
 
     private static string ReadScript(string fileName)
@@ -152,6 +152,7 @@ public class MigrationTests
             .Concat(NoDeleteTables.Select(t => $"trg_{t}_no_delete"))
             .Append("trg_scope_rules_within_domain")
             .Append("trg_scan_runs_requires_allow")
+            .Append("trg_invitations_immutable")
             .Order(StringComparer.Ordinal)
             .ToList();
         var actual = await ColumnAsync(db,

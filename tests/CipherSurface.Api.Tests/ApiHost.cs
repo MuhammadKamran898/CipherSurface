@@ -54,7 +54,8 @@ public sealed class ApiHost : IAsyncDisposable
         PostgresFixture postgres,
         IReadOnlyDictionary<string, string?>? settings = null,
         Action<WebApplication>? map = null,
-        TestDatabase? existing = null)
+        TestDatabase? existing = null,
+        TimeProvider? time = null)
     {
         var database = existing ?? await postgres.CreateDatabaseAsync();
         var directory = Path.Combine(Path.GetTempPath(), "cs-api-tests-" + Guid.NewGuid().ToString("N"));
@@ -63,7 +64,7 @@ public sealed class ApiHost : IAsyncDisposable
         var (keys, privatePem) = Generate();
         var keyFile = Path.Combine(directory, "jwt-private.pem");
         WritePrivateKey(keyFile, privatePem);
-        return await StartCoreAsync(database, keys, keyFile, directory, settings, map);
+        return await StartCoreAsync(database, keys, keyFile, directory, settings, map, time);
     }
 
     /// <summary>Starts the API with a key file written by the caller (rotation and key-validation tests).</summary>
@@ -72,12 +73,12 @@ public sealed class ApiHost : IAsyncDisposable
         Action<WebApplication>? map = null, TestDatabase? existing = null)
     {
         var database = existing ?? await postgres.CreateDatabaseAsync();
-        return await StartCoreAsync(database, keys, keyFile, Path.GetDirectoryName(keyFile)!, settings, map);
+        return await StartCoreAsync(database, keys, keyFile, Path.GetDirectoryName(keyFile)!, settings, map, null);
     }
 
     private static async Task<ApiHost> StartCoreAsync(
         TestDatabase database, TokenKeys keys, string keyFile, string directory,
-        IReadOnlyDictionary<string, string?>? settings, Action<WebApplication>? map)
+        IReadOnlyDictionary<string, string?>? settings, Action<WebApplication>? map, TimeProvider? time)
     {
         var logs = new CapturingLoggerProvider();
         var configuration = new Dictionary<string, string?>
@@ -100,6 +101,7 @@ public sealed class ApiHost : IAsyncDisposable
                 builder.Configuration.AddInMemoryCollection(configuration);
                 builder.Logging.ClearProviders();
                 builder.Logging.AddProvider(logs);
+                if (time is not null) builder.Services.AddSingleton(time);   // registered first, so it wins over TimeProvider.System
             },
             map);
         await app.StartAsync();
@@ -182,6 +184,17 @@ public sealed class ApiHost : IAsyncDisposable
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return new Tokens(json.RootElement.GetProperty("accessToken").GetString()!, json.RootElement.GetProperty("refreshToken").GetString()!);
+    }
+
+    // ------------------------------------------------------------------ invitations
+
+    /// <summary>Issues an invitation over HTTP and returns what the inviter received (including the one-time token).</summary>
+    public async Task<(Guid Id, string Token, string? Link, JsonElement Body)> InviteAsync(string bearer, string email, string role = "Analyst", Guid? organizationId = null)
+    {
+        var response = await SendAsync(HttpMethod.Post, "/api/v1/invitations", new { email, role }, bearer, organizationId);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+        return (body.GetProperty("invitationId").GetGuid(), body.GetProperty("token").GetString()!, body.TryGetProperty("link", out var link) && link.ValueKind == JsonValueKind.String ? link.GetString() : null, body);
     }
 
     // ------------------------------------------------------------------ http

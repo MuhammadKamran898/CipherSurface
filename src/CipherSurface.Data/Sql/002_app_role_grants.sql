@@ -14,7 +14,7 @@ FROM cipher_app;
 REVOKE DELETE, TRUNCATE ON
     organizations, users, domains, authorization_grants, domain_disputes,
     verification_challenges, verification_attempts, verification_evidence,
-    scope_rules, scan_runs
+    scope_rules, scan_runs, invitations
 FROM cipher_app;
 
 -- Migration history is owned by the migration role.
