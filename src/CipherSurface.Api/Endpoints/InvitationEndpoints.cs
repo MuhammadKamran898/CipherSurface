@@ -22,27 +22,24 @@ public static class InvitationEndpoints
     {
         var group = api.MapGroup("/invitations");
 
-        group.MapPost("/", async (CreateInvitationRequest request, HttpContext http, OrganizationContextResolver resolver, InvitationService invitations, ApiSettings settings, CancellationToken ct) =>
+        group.MapPost("/", async (OrganizationContext org, CreateInvitationRequest request, InvitationService invitations, ApiSettings settings, CancellationToken ct) =>
         {
-            var context = await resolver.ResolveAsync(http, ct);
-            var issued = await invitations.IssueAsync(context.Actor, request.Email, ParseRole(request.Role), ct);
+            var issued = await invitations.IssueAsync(org.Actor, request.Email, ParseRole(request.Role), ct);
             var link = settings.InvitationAcceptBaseUrl is { } baseUrl ? $"{baseUrl}#token={issued.Token}" : null;
             return Results.Json(new InvitationCreatedResponse(issued.InvitationId, issued.Email, issued.Role, issued.ExpiresAt, issued.Token, link),
                 statusCode: StatusCodes.Status201Created);
         });
 
-        group.MapGet("/", async (HttpContext http, OrganizationContextResolver resolver, InvitationService invitations, CancellationToken ct) =>
+        group.MapGet("/", async (OrganizationContext org, InvitationService invitations, CancellationToken ct) =>
         {
-            var context = await resolver.ResolveAsync(http, ct);
-            var items = (await invitations.ListAsync(context.Actor, ct))
+            var items = (await invitations.ListAsync(org.Actor, ct))
                 .Select(i => new InvitationItem(i.Id, i.Email, i.Role, i.State, i.CreatedAt, i.ExpiresAt, i.CreatedByUserId));
             return Results.Ok(items);
         });
 
-        group.MapDelete("/{id:guid}", async (Guid id, HttpContext http, OrganizationContextResolver resolver, InvitationService invitations, CancellationToken ct) =>
+        group.MapDelete("/{id:guid}", async (OrganizationContext org, Guid id, InvitationService invitations, CancellationToken ct) =>
         {
-            var context = await resolver.ResolveAsync(http, ct);
-            await invitations.RevokeAsync(context.Actor, id, ct);
+            await invitations.RevokeAsync(org.Actor, id, ct);
             return Results.NoContent();
         });
 

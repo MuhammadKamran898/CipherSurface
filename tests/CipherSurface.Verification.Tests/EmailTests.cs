@@ -256,7 +256,7 @@ public class ConfirmationEmailTests
 
         Assert.Equal("admin@example.com", message.To);
         Assert.Contains("example.com", message.Subject);
-        Assert.Contains($"https://app.ciphersurface.test/verify-email?c={id:D}&t={token}", message.TextBody);
+        Assert.Contains($"https://app.ciphersurface.test/verify-email#c={id:D}&t={token}", message.TextBody);
         Assert.Contains("Confirm", message.TextBody);
         Assert.Contains("2026-10-22 12:00 UTC", message.TextBody);
     }
@@ -269,6 +269,24 @@ public class ConfirmationEmailTests
 
         Assert.DoesNotContain("x=1", message.TextBody);
         Assert.DoesNotContain("#frag", message.TextBody);
+    }
+
+    [Fact]
+    public void Build_KeepsTheSecretInTheFragmentOnly_NeverInAQueryString()
+    {
+        var id = Guid.NewGuid();
+        var token = EmailTokens.Generate();
+
+        var message = ConfirmationEmail.Build("admin@example.com", "example.com",
+            new Uri("https://app.ciphersurface.test/verify-email"), id, token, Expires);
+
+        var link = message.TextBody.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Single(w => w.StartsWith("https://", StringComparison.Ordinal));
+        var hash = link.IndexOf('#');
+        Assert.True(hash > 0);
+        Assert.DoesNotContain('?', link);                       // nothing a web server or proxy would log
+        Assert.DoesNotContain(token, link[..hash]);
+        Assert.DoesNotContain(id.ToString("D"), link[..hash]);
+        Assert.Equal($"c={id:D}&t={token}", link[(hash + 1)..]);
     }
 
     [Theory]

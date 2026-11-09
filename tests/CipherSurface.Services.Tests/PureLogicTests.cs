@@ -52,7 +52,7 @@ public class DomainStatusCalculatorTests
 
 public class DomainNameValidatorTests
 {
-    private readonly DomainNameValidator _validator = new();
+    private readonly DomainNameValidator _validator = new(new BasicPublicSuffixCheck());
 
     [Theory]
     [InlineData("example.com", "example.com")]

@@ -1,4 +1,5 @@
 using System.Net;
+using CipherSurface.Verification;
 
 namespace CipherSurface.Api.Configuration;
 
@@ -36,6 +37,15 @@ public sealed class ApiSettings
     public int AuthRequestsPerMinute { get; private init; } = 10;
     public int InvitationRequestsPerMinute { get; private init; } = 10;
     public int GlobalRequestsPerMinute { get; private init; } = 300;
+    public IReadOnlyList<IPAddress> DnsServers { get; private init; } = VerificationSetup.DefaultDnsServers;
+    public int DnsTimeoutSeconds { get; private init; } = 5;
+
+    /// <summary>The web app page that email confirmation links open (https only). Unset means the email method stays unavailable.</summary>
+    public string? EmailConfirmationPage { get; private init; }
+
+    /// <summary>A Public Suffix List file to use instead of the one bundled in the build.</summary>
+    public string? PublicSuffixListFile { get; private init; }
+
     public int InvitationLifetimeDays { get; private init; } = 7;
     public int MaxPendingInvitationsPerOrganization { get; private init; } = 100;
 
@@ -99,6 +109,30 @@ public sealed class ApiSettings
         }
 
         var authLimit = ReadPositive(section, "RateLimiting:AuthRequestsPerMinute", 10, problems);
+        var dnsServers = new List<IPAddress>();
+        foreach (var item in section.GetSection("Verification:DnsServers").GetChildren())
+        {
+            if (IPAddress.TryParse(item.Value, out var server) && !server.Equals(IPAddress.Any) && !server.Equals(IPAddress.IPv6Any) && !dnsServers.Contains(server))
+                dnsServers.Add(server);
+            else
+                problems.Add($"{SectionName}:Verification:DnsServers:{item.Key} must be a unique, valid IP address.");
+        }
+        if (dnsServers.Count > 5) problems.Add($"{SectionName}:Verification:DnsServers can list at most 5 servers.");
+
+        var dnsTimeout = ReadPositive(section, "Verification:DnsTimeoutSeconds", 5, problems);
+        if (dnsTimeout > 30) problems.Add($"{SectionName}:Verification:DnsTimeoutSeconds must be between 1 and 30.");
+
+        var emailPage = section["Verification:EmailConfirmationPage"];
+        string? emailConfirmationPage = null;
+        if (!string.IsNullOrWhiteSpace(emailPage))
+        {
+            emailConfirmationPage = NormalizeHttpsPage(emailPage);
+            if (emailConfirmationPage is null)
+                problems.Add($"{SectionName}:Verification:EmailConfirmationPage must be an https URL without a query string or fragment.");
+        }
+
+        var suffixFile = NullIfBlank(section["Verification:PublicSuffixListFile"]);
+
         var invitationLimit = ReadPositive(section, "RateLimiting:InvitationRequestsPerMinute", 10, problems);
         var globalLimit = ReadPositive(section, "RateLimiting:GlobalRequestsPerMinute", 300, problems);
 
@@ -133,6 +167,10 @@ public sealed class ApiSettings
             AuthRequestsPerMinute = authLimit,
             InvitationRequestsPerMinute = invitationLimit,
             GlobalRequestsPerMinute = globalLimit,
+            DnsServers = dnsServers.Count == 0 ? VerificationSetup.DefaultDnsServers : dnsServers,
+            DnsTimeoutSeconds = dnsTimeout,
+            EmailConfirmationPage = emailConfirmationPage,
+            PublicSuffixListFile = suffixFile,
             InvitationLifetimeDays = lifetimeDays,
             MaxPendingInvitationsPerOrganization = maxPending,
             InvitationAcceptBaseUrl = acceptBaseUrl
@@ -151,6 +189,14 @@ public sealed class ApiSettings
         if (uri.Scheme is not ("http" or "https")) return null;
         if (uri.PathAndQuery != "/" || !string.IsNullOrEmpty(uri.Fragment) || !string.IsNullOrEmpty(uri.UserInfo)) return null;
         return uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
+    }
+
+    private static string? NormalizeHttpsPage(string value)
+    {
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)) return null;
+        if (uri.Scheme != Uri.UriSchemeHttps) return null;
+        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || !string.IsNullOrEmpty(uri.UserInfo)) return null;
+        return uri.GetLeftPart(UriPartial.Path);
     }
 
     private static string? NormalizeAcceptBaseUrl(string value)

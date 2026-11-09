@@ -47,8 +47,15 @@ public sealed class EmailVerificationService
         _attemptOptions = attemptOptions ?? new VerificationOptions();
     }
 
+    /// <summary>False until a real email provider is registered. Callers can use it to show the method as unavailable.</summary>
+    public bool IsAvailable => _sender is not NotConfiguredEmailSender;
+
     public async Task<IssuedEmailChallenge> IssueAsync(Actor actor, Guid domainId, string recipient, Uri confirmationPage, CancellationToken ct)
     {
+        // Fail closed before anything is created: without a provider no link can reach anyone, and a challenge row for it would be noise.
+        if (!IsAvailable)
+            throw new ServiceException("EmailNotConfigured", "Email verification is not available: no email provider is configured.");
+
         Guid challengeId;
         string plainToken;
         DateTimeOffset expiresAt;

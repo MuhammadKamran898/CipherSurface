@@ -36,6 +36,7 @@ public static class ProblemWriter
         415 => "Unsupported Media Type",
         429 => "Too Many Requests",
         502 => "Bad Gateway",
+        503 => "Service Unavailable",
         _ => status >= 500 ? "Internal Server Error" : "Error"
     };
 

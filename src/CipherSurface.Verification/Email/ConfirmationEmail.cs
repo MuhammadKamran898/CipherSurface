@@ -21,7 +21,9 @@ public static class ConfirmationEmail
         if (!confirmationPage.IsAbsoluteUri || confirmationPage.Scheme != Uri.UriSchemeHttps)
             throw new ArgumentException("The confirmation page must be an absolute https URL.", nameof(confirmationPage));
 
-        var link = $"{confirmationPage.GetLeftPart(UriPartial.Path)}?c={challengeId:D}&t={Uri.EscapeDataString(plainToken)}";
+        // The id and token go after '#': a browser never sends a fragment to any server, so they stay out of web server
+        // logs, proxies and Referer headers. The page reads them in the browser and posts them to the API in a body.
+        var link = $"{confirmationPage.GetLeftPart(UriPartial.Path)}#c={challengeId:D}&t={Uri.EscapeDataString(plainToken)}";
 
         var body =
             $"Someone asked to verify ownership of {rootDomain} on CipherSurface using this mailbox.\n\n" +

@@ -5,8 +5,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CipherSurface.Api.Security;
 
-/// <summary>The organization a request acts in, with the user's real role in it.</summary>
-public sealed record OrganizationContext(Actor Actor, string OrganizationName, OrganizationStatus OrganizationStatus, MembershipRole Role);
+/// <summary>
+/// The organization a request acts in, with the user's real role in it. Declare it as an endpoint parameter and the
+/// framework resolves it through OrganizationContextResolver before the handler runs (membership checked against the
+/// database, the Actor built on the server). A failed resolution is a ServiceException and becomes a problem response.
+/// </summary>
+public sealed record OrganizationContext(Actor Actor, string OrganizationName, OrganizationStatus OrganizationStatus, MembershipRole Role)
+{
+    /// <summary>Called by minimal APIs to bind a parameter of this type.</summary>
+    public static async ValueTask<OrganizationContext?> BindAsync(HttpContext http) =>
+        await http.RequestServices.GetRequiredService<OrganizationContextResolver>().ResolveAsync(http, http.RequestAborted);
+}
 
 /// <summary>
 /// Works out which organization a request acts in. The X-Organization-Id header only SELECTS among the organizations

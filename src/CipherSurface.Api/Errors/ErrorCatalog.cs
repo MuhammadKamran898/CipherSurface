@@ -48,7 +48,10 @@ public static class ErrorCatalog
         ["AccountLockedOut"] = 429, ["AttemptLimitReached"] = 429, ["RateLimited"] = 429,
 
         // 502: an outside service failed
-        ["EmailSendFailed"] = 502
+        ["EmailSendFailed"] = 502,
+
+        // 503: a capability this deployment does not have
+        ["EmailNotConfigured"] = 503
     }.ToFrozenDictionary();
 
     public static bool TryGetStatus(string code, out int status) => Statuses.TryGetValue(code, out status);

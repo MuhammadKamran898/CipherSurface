@@ -8,6 +8,7 @@ using CipherSurface.Api.Security;
 using CipherSurface.Auth;
 using CipherSurface.Data;
 using CipherSurface.Services;
+using CipherSurface.Verification;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -38,6 +39,15 @@ public static class ApiApplication
             o.Limits.MaxRequestBodySize = MaxRequestBodyBytes;
         });
 
+        // Fail fast on a mis-wired container: every registration must be constructible and no singleton may hold a scoped service.
+        builder.Host.UseDefaultServiceProvider(o =>
+        {
+            o.ValidateOnBuild = true;
+            o.ValidateScopes = true;
+        });
+
+        var suffixes = LoadPublicSuffixList(settings);
+
         var services = builder.Services;
         services.AddSingleton(settings);
         services.AddCipherSurfaceData(settings.ConnectionString);
@@ -46,6 +56,13 @@ public static class ApiApplication
             Lifetime = TimeSpan.FromDays(settings.InvitationLifetimeDays),
             MaxPendingPerOrganization = settings.MaxPendingInvitationsPerOrganization
         });
+        services.AddSingleton<IPublicSuffixCheck>(suffixes);
+        services.AddCipherSurfaceVerification(new VerificationSetup
+        {
+            DnsServers = settings.DnsServers,
+            DnsTimeout = TimeSpan.FromSeconds(settings.DnsTimeoutSeconds)
+        });
+        services.AddCipherSurfaceServices();
         services.AddSingleton<IPlatformAdminPolicy>(new ConfiguredPlatformAdminPolicy(settings.PlatformAdminUserIds));
         services.AddSingleton<PlatformAdminGate>();
         services.AddScoped<OrganizationContextResolver>();
@@ -85,6 +102,8 @@ public static class ApiApplication
         }
 
         var app = builder.Build();
+        app.Logger.LogInformation("Public Suffix List loaded: {RuleCount} rules from {Source}",
+            suffixes.RuleCount, settings.PublicSuffixListFile ?? "the embedded resource");
 
         // Only configured proxies are trusted to say who the client is. With none configured the header is ignored.
         if (settings.KnownProxies.Count > 0) app.UseForwardedHeaders();
@@ -123,6 +142,19 @@ public static class ApiApplication
         InvitationEndpoints.Map(api);
         mapExtraEndpoints?.Invoke(app);
         return app;
+    }
+
+    /// <summary>The Public Suffix List decides which names nobody owns. There is no fallback list: without it the API does not start.</summary>
+    private static PublicSuffixList LoadPublicSuffixList(ApiSettings settings)
+    {
+        try
+        {
+            return settings.PublicSuffixListFile is { } file ? PublicSuffixList.LoadFile(file) : PublicSuffixList.LoadEmbedded();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or InvalidOperationException)
+        {
+            throw new ApiConfigurationException([$"The Public Suffix List could not be loaded. {ex.Message}"]);
+        }
     }
 
     private static void AddRateLimiting(IServiceCollection services, ApiSettings settings)

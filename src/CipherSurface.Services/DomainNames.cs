@@ -9,8 +9,8 @@ public interface IPublicSuffixCheck
 }
 
 /// <summary>
-/// PLACEHOLDER with a few well-known entries. Replace with a real Public Suffix List package
-/// before production; the interface stays the same.
+/// A short hand-written list for TESTS ONLY. Production uses PublicSuffixList (the real Public Suffix List); the
+/// validator no longer has a default, so this can never be used by accident.
 /// </summary>
 public sealed class BasicPublicSuffixCheck : IPublicSuffixCheck
 {
@@ -30,8 +30,11 @@ public sealed class DomainNameValidator
     private static readonly string[] ReservedSuffixes = { "localhost", "local", "internal", "lan", "test", "invalid", "home.arpa" };
     private readonly IPublicSuffixCheck _publicSuffixes;
 
-    public DomainNameValidator(IPublicSuffixCheck? publicSuffixes = null) =>
-        _publicSuffixes = publicSuffixes ?? new BasicPublicSuffixCheck();
+    public DomainNameValidator(IPublicSuffixCheck publicSuffixes)
+    {
+        ArgumentNullException.ThrowIfNull(publicSuffixes);
+        _publicSuffixes = publicSuffixes;
+    }
 
     /// <summary>Returns the lower-case ASCII form, or throws ServiceException.</summary>
     public string Normalize(string? input)

@@ -9,6 +9,14 @@
     <InternalsVisibleTo Include="CipherSurface.Auth" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The Public Suffix List is a REQUIRED build asset, embedded in this assembly so every build, test run, publish and image carries it. -->
+    <EmbeddedResource Include="Data/public_suffix_list.dat" LogicalName="CipherSurface.Services.public_suffix_list.dat" />
+  </ItemGroup>
+  <Target Name="RequirePublicSuffixList" BeforeTargets="BeforeBuild">
+    <Error Code="CSPSL001" Condition="!Exists('$(MSBuildProjectDirectory)/Data/public_suffix_list.dat')"
+           Text="The Public Suffix List is missing (src/CipherSurface.Services/Data/public_suffix_list.dat). Fetch it once from the repository root: Invoke-WebRequest https://publicsuffix.org/list/public_suffix_list.dat -OutFile src/CipherSurface.Services/Data/public_suffix_list.dat   (see src/CipherSurface.Services/Data/README.md)" />
+  </Target>
+  <ItemGroup>
     <ProjectReference Include="../CipherSurface.Data/CipherSurface.Data.csproj" />
     <ProjectReference Include="../CipherSurface.Verification/CipherSurface.Verification.csproj" />
     <ProjectReference Include="../CipherSurface.Policy/CipherSurface.Policy.csproj" />

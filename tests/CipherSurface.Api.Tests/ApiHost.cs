@@ -26,6 +26,8 @@ public sealed class ApiHost : IAsyncDisposable
     public const string Password = "correct horse battery staple";
     public const string KeyId = "test-key-1";
 
+    public const string PublicSuffixFixture = "// test list\ncom\norg\nuk\nco.uk\n*.ck\n!www.ck\ngithub.io\n";
+
     private readonly string _directory;
     private readonly WebApplication _app;
 
@@ -35,6 +37,7 @@ public sealed class ApiHost : IAsyncDisposable
     public string PrivateKeyFile { get; }
     public CapturingLoggerProvider Logs { get; }
     public string BaseAddress { get; }
+    public IServiceProvider Services => _app.Services;
 
     private ApiHost(WebApplication app, string baseAddress, TestDatabase database, TokenKeys keys, string directory, string keyFile, CapturingLoggerProvider logs)
     {
@@ -81,8 +84,12 @@ public sealed class ApiHost : IAsyncDisposable
         IReadOnlyDictionary<string, string?>? settings, Action<WebApplication>? map, TimeProvider? time)
     {
         var logs = new CapturingLoggerProvider();
+        var suffixFile = Path.Combine(directory, "public_suffix_list.dat");
+        if (!File.Exists(suffixFile)) File.WriteAllText(suffixFile, PublicSuffixFixture);
         var configuration = new Dictionary<string, string?>
         {
+            // A small list in the real format, so API tests need no bundled data file (the bundled one is tested on its own).
+            ["CipherSurface:Verification:PublicSuffixListFile"] = suffixFile,
             ["ConnectionStrings:CipherSurface"] = database.ConnectionString,
             ["CipherSurface:Jwt:PrivateKeyFile"] = keyFile,
             ["CipherSurface:Jwt:KeyId"] = KeyId,

@@ -1,3 +1,5 @@
 # Normalize line endings in the repository; Visual Studio writes CRLF into solution files.
 * text=auto
 *.sln text eol=crlf
+# Keep the Public Suffix List byte-for-byte as published (no line-ending conversion on any platform).
+src/CipherSurface.Services/Data/public_suffix_list.dat -text

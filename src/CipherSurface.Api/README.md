@@ -80,9 +80,29 @@ on invalid configuration, and error messages never contain secrets.
 | `CipherSurface:Invitations:LifetimeDays` | no | 1 to 30, default 7. |
 | `CipherSurface:Invitations:MaxPendingPerOrganization` | no | Open invitations one organization may hold, 1 to 1000, default 100. |
 | `CipherSurface:Invitations:AcceptBaseUrl` | no | Where the web app handles links, for example `https://app.example.com/accept-invitation` (`http` only for localhost). Unset means no link is made, only the token. |
+| `CipherSurface:Verification:DnsServers:N` | no | Resolvers used for DNS TXT proof (1 to 5). Default: `1.1.1.1` and `8.8.8.8`. A resolver that is down never invalidates a proof another one confirms. |
+| `CipherSurface:Verification:DnsTimeoutSeconds` | no | 1 to 30, default 5. |
+| `CipherSurface:Verification:EmailConfirmationPage` | no | The web app page confirmation links open, `https` only, for example `https://app.example.com/verify-email`. The id and token are added after `#`. |
+| `CipherSurface:Verification:PublicSuffixListFile` | no | Use this Public Suffix List file instead of the bundled one. |
 | `CipherSurface:RateLimiting:AuthRequestsPerMinute` | no | Default 10 per client address, for the auth and setup endpoints. |
 | `CipherSurface:RateLimiting:InvitationRequestsPerMinute` | no | Default 10 per client address, for invitation preview and accept. |
 | `CipherSurface:RateLimiting:GlobalRequestsPerMinute` | no | Default 300 per client address. |
+
+### The Public Suffix List
+
+Domain onboarding refuses shared suffixes (`com`, `co.uk`, `github.io`) using the official Public Suffix List, and there
+is deliberately no fallback list. It is committed under `src/CipherSurface.Services/Data/`. To refresh it, from the repository root:
+
+```powershell
+Invoke-WebRequest https://publicsuffix.org/list/public_suffix_list.dat -OutFile src/CipherSurface.Services/Data/public_suffix_list.dat
+```
+
+The file is committed and embedded in `CipherSurface.Services.dll`; if it is ever missing the build fails with `CSPSL001` and the command above, and an assembly built any other way refuses to start. The start-up log says which list was loaded. See `src/CipherSurface.Services/Data/README.md` for refreshing and for verifying a published build.
+
+### Email verification needs a provider
+
+Until an email provider is registered the admin-email method fails closed: issuing a confirmation is refused with
+`EmailNotConfigured` (503) before anything is created, and nothing is logged in its place. No provider is built in.
 
 ### Creating a development signing key
 

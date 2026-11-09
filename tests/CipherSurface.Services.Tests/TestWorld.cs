@@ -109,7 +109,7 @@ public sealed class TestWorld
             Http = http,
             Sender = sender,
             Audit = audit,
-            Onboarding = new DomainOnboardingService(db, time, audit, new DomainNameValidator()),
+            Onboarding = new DomainOnboardingService(db, time, audit, new DomainNameValidator(new BasicPublicSuffixCheck())),
             Challenges = new ChallengeService(db, time, audit),
             Verification = new VerificationService(db, time, registry, claims, audit, attemptOptions, delay: (_, _) => Task.CompletedTask),
             Email = new EmailVerificationService(db, time, claims, audit, sender, emailOptions, attemptOptions),
@@ -266,7 +266,7 @@ public static class Scenarios
 
     public static (Guid ChallengeId, string Token) ParseLink(EmailMessage message)
     {
-        var match = System.Text.RegularExpressions.Regex.Match(message.TextBody, @"\?c=([0-9a-fA-F-]{36})&t=([A-Za-z0-9_-]+)");
+        var match = System.Text.RegularExpressions.Regex.Match(message.TextBody, @"#c=([0-9a-fA-F-]{36})&t=([A-Za-z0-9_-]+)");
         return (Guid.Parse(match.Groups[1].Value), match.Groups[2].Value);
     }
 

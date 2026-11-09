@@ -33,7 +33,7 @@ public class EmailVerificationTests
         var message = Assert.Single(world.Sender.Sent);
         Assert.Equal("admin@example.com", message.To);
         Assert.Equal("admin@example.com", issued.Recipient);
-        Assert.StartsWith("https://app.ciphersurface.test/verify-email?c=", message.TextBody[(message.TextBody.IndexOf("https://", StringComparison.Ordinal))..]);
+        Assert.StartsWith("https://app.ciphersurface.test/verify-email#c=", message.TextBody[(message.TextBody.IndexOf("https://", StringComparison.Ordinal))..]);
 
         var (challengeId, token) = Scenarios.ParseLink(message);
         Assert.Equal(issued.ChallengeId, challengeId);

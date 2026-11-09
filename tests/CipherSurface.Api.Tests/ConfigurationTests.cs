@@ -92,6 +92,80 @@ public class ConfigurationTests
         Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(values)));
     }
 
+    // ------------------------------------------------------------------ verification
+
+    [Fact]
+    public void VerificationDefaults_AreTwoResolvers_FiveSeconds_AndNoEmailPage()
+    {
+        var settings = ApiSettings.Load(Config(Valid()));
+
+        Assert.Equal(new[] { "1.1.1.1", "8.8.8.8" }, settings.DnsServers.Select(s => s.ToString()).ToArray());
+        Assert.Equal(5, settings.DnsTimeoutSeconds);
+        Assert.Null(settings.EmailConfirmationPage);
+        Assert.Null(settings.PublicSuffixListFile);
+    }
+
+    [Fact]
+    public void ConfiguredResolversReplaceTheDefaults()
+    {
+        var settings = ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Verification:DnsServers:0", "9.9.9.9"))));
+
+        Assert.Equal(new[] { "9.9.9.9" }, settings.DnsServers.Select(s => s.ToString()).ToArray());
+    }
+
+    [Theory]
+    [InlineData("not-an-ip")]
+    [InlineData("0.0.0.0")]
+    [InlineData("::")]
+    [InlineData("")]
+    public void AnInvalidResolverIsRejected(string value)
+    {
+        var ex = Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Verification:DnsServers:0", value)))));
+
+        Assert.Contains("DnsServers", ex.Message);
+    }
+
+    [Fact]
+    public void ADuplicateResolverAndMoreThanFiveAreRejected()
+    {
+        Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(),
+            ("CipherSurface:Verification:DnsServers:0", "1.1.1.1"), ("CipherSurface:Verification:DnsServers:1", "1.1.1.1")))));
+        Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(),
+            ("CipherSurface:Verification:DnsServers:0", "1.1.1.1"), ("CipherSurface:Verification:DnsServers:1", "1.0.0.1"), ("CipherSurface:Verification:DnsServers:2", "8.8.8.8"),
+            ("CipherSurface:Verification:DnsServers:3", "8.8.4.4"), ("CipherSurface:Verification:DnsServers:4", "9.9.9.9"), ("CipherSurface:Verification:DnsServers:5", "149.112.112.112")))));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("31")]
+    [InlineData("slow")]
+    public void ADnsTimeoutOutsideOneToThirtySecondsIsRejected(string value)
+    {
+        Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Verification:DnsTimeoutSeconds", value)))));
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com/verify-email", "https://app.example.com/verify-email")]
+    [InlineData("https://app.example.com/verify-email/", "https://app.example.com/verify-email/")]
+    public void AnHttpsConfirmationPageIsAccepted(string configured, string expected)
+    {
+        Assert.Equal(expected, ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Verification:EmailConfirmationPage", configured)))).EmailConfirmationPage);
+    }
+
+    [Theory]
+    [InlineData("http://app.example.com/verify-email")]
+    [InlineData("http://localhost:4200/verify-email")]
+    [InlineData("https://app.example.com/verify-email?x=1")]
+    [InlineData("https://app.example.com/verify-email#frag")]
+    [InlineData("https://user:pass@app.example.com/verify-email")]
+    [InlineData("/verify-email")]
+    public void AnUnsafeConfirmationPageIsRejected(string configured)
+    {
+        var ex = Assert.Throws<ApiConfigurationException>(() => ApiSettings.Load(Config(With(Valid(), ("CipherSurface:Verification:EmailConfirmationPage", configured)))));
+
+        Assert.Contains("EmailConfirmationPage", ex.Message);
+    }
+
     // ------------------------------------------------------------------ invitations
 
     [Fact]

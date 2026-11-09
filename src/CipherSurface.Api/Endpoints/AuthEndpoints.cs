@@ -71,11 +71,8 @@ public static class AuthEndpoints
             return Results.Ok(new MeResponse(userId, user.FindFirst("email")?.Value ?? string.Empty, await admins.IsPlatformAdminAsync(userId, ct), organizations));
         });
 
-        api.MapGet("/organization", async (HttpContext http, OrganizationContextResolver resolver, CancellationToken ct) =>
-        {
-            var context = await resolver.ResolveAsync(http, ct);
-            return Results.Ok(new OrganizationResponse(context.Actor.OrganizationId, context.OrganizationName, context.OrganizationStatus, context.Role));
-        });
+        api.MapGet("/organization", (OrganizationContext org) =>
+            Results.Ok(new OrganizationResponse(org.Actor.OrganizationId, org.OrganizationName, org.OrganizationStatus, org.Role)));
     }
 
     private static void RequireSetupToken(HttpContext http, ApiSettings settings)

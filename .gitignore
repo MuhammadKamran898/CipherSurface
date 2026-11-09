@@ -33,3 +33,6 @@ secrets.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local publish and verification output
+.artifacts/
