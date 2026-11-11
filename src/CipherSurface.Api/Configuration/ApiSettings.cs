@@ -37,6 +37,8 @@ public sealed class ApiSettings
     public int AuthRequestsPerMinute { get; private init; } = 10;
     public int InvitationRequestsPerMinute { get; private init; } = 10;
     public int GlobalRequestsPerMinute { get; private init; } = 300;
+    /// <summary>Per client address, for the endpoints that make outside requests or take a secret (verify, issue, confirm).</summary>
+    public int VerificationRequestsPerMinute { get; private init; } = 30;
     public IReadOnlyList<IPAddress> DnsServers { get; private init; } = VerificationSetup.DefaultDnsServers;
     public int DnsTimeoutSeconds { get; private init; } = 5;
 
@@ -135,6 +137,7 @@ public sealed class ApiSettings
 
         var invitationLimit = ReadPositive(section, "RateLimiting:InvitationRequestsPerMinute", 10, problems);
         var globalLimit = ReadPositive(section, "RateLimiting:GlobalRequestsPerMinute", 300, problems);
+        var verificationLimit = ReadPositive(section, "RateLimiting:VerificationRequestsPerMinute", 30, problems);
 
         var lifetimeDays = ReadPositive(section, "Invitations:LifetimeDays", 7, problems);
         if (lifetimeDays > 30) problems.Add($"{SectionName}:Invitations:LifetimeDays must be between 1 and 30.");
@@ -167,6 +170,7 @@ public sealed class ApiSettings
             AuthRequestsPerMinute = authLimit,
             InvitationRequestsPerMinute = invitationLimit,
             GlobalRequestsPerMinute = globalLimit,
+            VerificationRequestsPerMinute = verificationLimit,
             DnsServers = dnsServers.Count == 0 ? VerificationSetup.DefaultDnsServers : dnsServers,
             DnsTimeoutSeconds = dnsTimeout,
             EmailConfirmationPage = emailConfirmationPage,

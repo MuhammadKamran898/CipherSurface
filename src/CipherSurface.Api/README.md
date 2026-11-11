@@ -21,6 +21,15 @@ It contains no business rules and opens no database transactions of its own.
 | `POST /api/v1/invitations/preview` | token | What a link is for (organization, email, role, expiry). Changes nothing. |
 | `POST /api/v1/invitations/accept` | token | A new person accepts and chooses a password, which creates their account. |
 | `POST /api/v1/invitations/accept/existing` | yes + token | A signed-in account whose email matches the invitation joins. |
+| `GET /api/v1/attestation` | yes | The authorization statement (version and text) a user must accept to add a domain. |
+| `POST /api/v1/domains` | Owner/Admin | Adds a domain after the statement is accepted. The server stores the hash of its own text. |
+| `GET /api/v1/domains` | any member | The organization's domains, paged (`page`, `pageSize` up to 200, optional `status`). |
+| `GET /api/v1/domains/{id}` | any member | Status, authorization, evidence, open challenges, disputes. Another organization's id is `NotFound`. |
+| `POST /api/v1/domains/{id}/challenges` | Owner/Admin | Issues a DNS TXT, HTTP file or HTML meta challenge and returns the instruction. |
+| `POST /api/v1/domains/{id}/email-challenges` | Owner/Admin | Sends a confirmation email to a standard role mailbox on the domain. 503 until email is configured. |
+| `POST /api/v1/challenges/{id}/verify` | Owner/Admin | One click, one attempt: checks DNS, the file or the meta tag. |
+| `GET /api/v1/email-challenges/{id}` | Owner/Admin | What the email link is for. Changes nothing, so a mail scanner cannot use it up. |
+| `POST /api/v1/email-challenges/{id}/confirm` | Owner/Admin | Confirms with the one-time token (in the body). Only this call consumes the link. |
 
 ## Registration is invitation-only
 
@@ -42,6 +51,50 @@ an invitation.
 
 Until an email provider exists, the inviter delivers the link. When one is added, requiring a verified email before an
 existing account may accept is the next hardening step.
+
+## Domains and verification
+
+- Reading (list, details) is open to every member. Every write needs an Owner or Admin of an **active** organization, and
+  that is the first check, before the content of the request is looked at and before anything about the deployment
+  (such as whether email is configured) is revealed: login, then organization, then role, then the rest.
+- Every query is filtered by the caller's organization. A domain or challenge of another organization answers `NotFound`,
+  exactly like one that does not exist. The same name may be added by two organizations; who owns it is decided by proof.
+- The server owns the authorization text. The client sends the version it was shown and `accepted: true`; a stale version
+  is `AttestationOutdated` (409). The stored hash is always of the text the user could read.
+- DNS, file and meta tokens are public proofs, so an Owner or Admin can see the instruction of an open challenge again.
+  Other roles see that a challenge exists, not its instruction. An email token is a secret: it is stored only as a hash,
+  is mailed once, and is never returned by any endpoint.
+- A dispute is shown to each side as "a dispute exists" with its own role. The other organization is never named.
+- The Verify click can take several seconds because DNS is re-checked for propagation. Attempts are limited per user and
+  per address by the service, and these endpoints have their own per-client limit (`RateLimiting:VerificationRequestsPerMinute`, default 30).
+- Email links carry only the challenge id and the token after `#`, not the organization. A person with several
+  organizations must send the `X-Organization-Id` of the organization that owns the domain, so the confirmation page has
+  to find it (see below).
+
+### Email confirmation page: finding the right organization
+
+`GET /email-challenges/{id}` and `POST /email-challenges/{id}/confirm` check the role of the caller in the chosen
+organization first, then look the challenge up inside that organization only:
+
+| Caller in the chosen organization | Challenge belongs to that organization | Answer |
+|---|---|---|
+| Owner or Admin | yes | 200 |
+| Owner or Admin | no, or it does not exist | 404 `NotFound` |
+| Analyst or Viewer | any | 403 `NotAllowed` (the challenge is never looked up, so this reveals nothing about it) |
+| Owner or Admin of a **suspended** organization | any | 403 `OrganizationSuspended` (writes and the preview are refused; the challenge is not looked up) |
+
+The page therefore tries **every** membership of the signed-in user (from `GET /me`) and must not stop at the first 403:
+
+1. 200: this is the organization; keep it and continue with that `X-Organization-Id`.
+2. 404: try the next organization.
+3. 403: remember its code (`NotAllowed` or `OrganizationSuspended`) and try the next organization.
+4. No 200, but at least one 403: show a message for the code you saw ("you do not have permission to confirm this" for
+   `NotAllowed`, "this organization is suspended" for `OrganizationSuspended`).
+5. Every answer was 404: show that none of your organizations matches this link.
+
+The page always sends `X-Organization-Id`; without it, a person with several organizations gets 400 `OrganizationRequired`.
+Only the preview should be used for the search. Call `confirm` once, for the organization the preview selected, because
+a confirm with a wrong token counts as a failed attempt.
 
 ## Organization context
 
