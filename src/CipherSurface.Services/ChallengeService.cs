@@ -102,7 +102,8 @@ public sealed class ChallengeService
         return host;
     }
 
-    private static string Instruction(VerificationMethod method, string host, string token) => method switch
+    /// <summary>The text shown to the user. Internal so the read side can show it again for a still-open challenge.</summary>
+    internal static string Instruction(VerificationMethod method, string host, string token) => method switch
     {
         VerificationMethod.DnsTxt =>
             $"Add a TXT record at {ProofFormat.DnsLabel}.{host} with the value {ProofFormat.ExpectedValue(token)}",

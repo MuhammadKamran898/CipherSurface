@@ -140,6 +140,7 @@ public static class ApiApplication
         var api = app.MapGroup("/api/v1").RequireAuthorization();
         AuthEndpoints.Map(api);
         InvitationEndpoints.Map(api);
+        DomainEndpoints.Map(api);
         mapExtraEndpoints?.Invoke(app);
         return app;
     }
@@ -177,6 +178,9 @@ public static class ApiApplication
             // Preview and accept take a secret token, so they get their own per-client limit, separate from login.
             o.AddPolicy(InvitationEndpoints.RateLimitPolicy, http =>
                 RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.InvitationRequestsPerMinute)));
+            // Verify clicks make outside DNS and HTTP requests; email confirmation takes a secret token. Their own per-client limit.
+            o.AddPolicy(DomainEndpoints.RateLimitPolicy, http =>
+                RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.VerificationRequestsPerMinute)));
         });
     }
 

@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<DisputeService>();
         services.TryAddScoped<ScanStartService>();
         services.TryAddScoped<ScopeRuleService>();
+        services.TryAddScoped<DomainQueryService>();
         return services;
     }
 }

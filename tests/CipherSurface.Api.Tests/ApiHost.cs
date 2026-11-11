@@ -58,7 +58,8 @@ public sealed class ApiHost : IAsyncDisposable
         IReadOnlyDictionary<string, string?>? settings = null,
         Action<WebApplication>? map = null,
         TestDatabase? existing = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         var database = existing ?? await postgres.CreateDatabaseAsync();
         var directory = Path.Combine(Path.GetTempPath(), "cs-api-tests-" + Guid.NewGuid().ToString("N"));
@@ -67,7 +68,7 @@ public sealed class ApiHost : IAsyncDisposable
         var (keys, privatePem) = Generate();
         var keyFile = Path.Combine(directory, "jwt-private.pem");
         WritePrivateKey(keyFile, privatePem);
-        return await StartCoreAsync(database, keys, keyFile, directory, settings, map, time);
+        return await StartCoreAsync(database, keys, keyFile, directory, settings, map, time, configureServices);
     }
 
     /// <summary>Starts the API with a key file written by the caller (rotation and key-validation tests).</summary>
@@ -81,7 +82,8 @@ public sealed class ApiHost : IAsyncDisposable
 
     private static async Task<ApiHost> StartCoreAsync(
         TestDatabase database, TokenKeys keys, string keyFile, string directory,
-        IReadOnlyDictionary<string, string?>? settings, Action<WebApplication>? map, TimeProvider? time)
+        IReadOnlyDictionary<string, string?>? settings, Action<WebApplication>? map, TimeProvider? time,
+        Action<IServiceCollection>? configureServices = null)
     {
         var logs = new CapturingLoggerProvider();
         var suffixFile = Path.Combine(directory, "public_suffix_list.dat");
@@ -109,6 +111,8 @@ public sealed class ApiHost : IAsyncDisposable
                 builder.Logging.ClearProviders();
                 builder.Logging.AddProvider(logs);
                 if (time is not null) builder.Services.AddSingleton(time);   // registered first, so it wins over TimeProvider.System
+                // Registered before the application's own TryAdd registrations, so a test can swap the email sender, the verifiers or the options.
+                configureServices?.Invoke(builder.Services);
             },
             map);
         await app.StartAsync();
