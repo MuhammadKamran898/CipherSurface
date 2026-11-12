@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using CipherSurface.Api.Configuration;
 using CipherSurface.Api.Endpoints;
 using CipherSurface.Api.Errors;
+using CipherSurface.Api.RateLimiting;
 using CipherSurface.Api.Security;
 using CipherSurface.Auth;
 using CipherSurface.Data;
@@ -62,7 +63,7 @@ public static class ApiApplication
             DnsServers = settings.DnsServers,
             DnsTimeout = TimeSpan.FromSeconds(settings.DnsTimeoutSeconds)
         });
-        services.AddCipherSurfaceServices();
+        services.AddCipherSurfaceServices(governance: new GovernanceOptions { MaxDomainsPerOrganization = settings.MaxDomainsPerOrganization });
         services.AddSingleton<IPlatformAdminPolicy>(new ConfiguredPlatformAdminPolicy(settings.PlatformAdminUserIds));
         services.AddSingleton<PlatformAdminGate>();
         services.AddScoped<OrganizationContextResolver>();
@@ -78,6 +79,7 @@ public static class ApiApplication
         services.AddExceptionHandler<ApiExceptionHandler>();
 
         AddRateLimiting(services, settings);
+        services.AddSingleton<GovernanceActorLimiter>();
 
         if (settings.CorsOrigins.Count > 0)
         {
@@ -133,6 +135,7 @@ public static class ApiApplication
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseMiddleware<GovernanceActorRateLimitMiddleware>();   // per-user governance limit: needs the signed-in user, so it comes after authentication
 
         // Secure by default: everything under /api/v1 requires a login unless an endpoint says AllowAnonymous. Unknown
         // routes, wrong methods and unsupported content types still get their plain 404, 405 and 415 problem responses
@@ -141,6 +144,7 @@ public static class ApiApplication
         AuthEndpoints.Map(api);
         InvitationEndpoints.Map(api);
         DomainEndpoints.Map(api);
+        ScopeRuleEndpoints.Map(api);
         mapExtraEndpoints?.Invoke(app);
         return app;
     }
@@ -181,6 +185,9 @@ public static class ApiApplication
             // Verify clicks make outside DNS and HTTP requests; email confirmation takes a secret token. Their own per-client limit.
             o.AddPolicy(DomainEndpoints.RateLimitPolicy, http =>
                 RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.VerificationRequestsPerMinute)));
+            // Governance changes: per client address here, per signed-in user in GovernanceActorRateLimitMiddleware.
+            o.AddPolicy(GovernanceRateLimit.Policy, http =>
+                RateLimitPartition.GetFixedWindowLimiter(ClientIp.Of(http), _ => Window(settings.GovernanceRequestsPerMinute)));
         });
     }
 

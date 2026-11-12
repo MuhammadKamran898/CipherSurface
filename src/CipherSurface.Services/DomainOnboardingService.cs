@@ -14,13 +14,21 @@ public sealed class DomainOnboardingService
     private readonly TimeProvider _time;
     private readonly AuditLogWriter _audit;
     private readonly DomainNameValidator _names;
+    private readonly int _maxDomains;
 
-    public DomainOnboardingService(IDbContextFactory<CipherSurfaceDbContext> factory, TimeProvider time, AuditLogWriter audit, DomainNameValidator names)
+    public DomainOnboardingService(
+        IDbContextFactory<CipherSurfaceDbContext> factory, TimeProvider time, AuditLogWriter audit, DomainNameValidator names,
+        GovernanceOptions? governance = null)
     {
+        var maxDomains = (governance ?? new GovernanceOptions()).MaxDomainsPerOrganization;
+        if (maxDomains < 1)
+            throw new ArgumentOutOfRangeException(nameof(governance), "An organization must be allowed at least one domain.");
+
         _factory = factory;
         _time = time;
         _audit = audit;
         _names = names;
+        _maxDomains = maxDomains;
     }
 
     /// <summary>Creates the domain in Pending state and records the organization's authorization attestation.</summary>
@@ -64,6 +72,15 @@ public sealed class DomainOnboardingService
         try
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            // One add at a time per organization, so two requests cannot both pass the count and exceed the limit. The lock
+            // is released by the commit, so the next add sees this one's row. It is taken before the audit lock, which is
+            // always last.
+            await DbLocks.AcquireAsync(db, $"domaincount:{actor.OrganizationId:D}", ct);
+            var existing = await db.Domains.CountAsync(d => d.OrganizationId == actor.OrganizationId, ct);
+            if (existing >= _maxDomains)
+                throw new ServiceException("TooManyDomains", $"An organization can have at most {_maxDomains} domains.");
+
             db.Domains.Add(domain);
             db.AuthorizationGrants.Add(grant);
             await db.SaveChangesAsync(ct);

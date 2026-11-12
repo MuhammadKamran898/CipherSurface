@@ -38,7 +38,7 @@ public static class ErrorCatalog
 
         // 409: the request is fine but the current state does not allow it
         ["AlreadyActive"] = 409, ["AlreadySuspended"] = 409, ["Busy"] = 409, ["ChallengeExpired"] = 409, ["EmailTaken"] = 409, ["AccountExists"] = 409, ["AlreadyMember"] = 409,
-        ["InvitationNoLongerValid"] = 409, ["InvitationNotPending"] = 409, ["TooManyInvitations"] = 409, ["AttestationOutdated"] = 409,
+        ["InvitationNoLongerValid"] = 409, ["InvitationNotPending"] = 409, ["TooManyInvitations"] = 409, ["AttestationOutdated"] = 409, ["TooManyDomains"] = 409,
         ["ChallengeNotActive"] = 409, ["ClaimantHasNoValidProof"] = 409, ["DisputeNotOpen"] = 409, ["DomainExists"] = 409,
         ["DomainNotVerifiable"] = 409, ["NoActiveGrant"] = 409, ["RuleExists"] = 409, ["RuleRemoved"] = 409,
         ["RunNotQueued"] = 409, ["RunNotRunning"] = 409, ["SetupClosed"] = 409, ["StartDeadlineExpired"] = 409,

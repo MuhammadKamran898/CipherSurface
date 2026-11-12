@@ -39,6 +39,12 @@ public sealed class ApiSettings
     public int GlobalRequestsPerMinute { get; private init; } = 300;
     /// <summary>Per client address, for the endpoints that make outside requests or take a secret (verify, issue, confirm).</summary>
     public int VerificationRequestsPerMinute { get; private init; } = 30;
+    /// <summary>Governance changes (scope rules, later revocation and suspension), per client address.</summary>
+    public int GovernanceRequestsPerMinute { get; private init; } = 60;
+    /// <summary>The same changes, per signed-in user, whatever address they come from.</summary>
+    public int GovernanceActorRequestsPerMinute { get; private init; } = 30;
+    /// <summary>Domain records one organization may hold (all rows, Revoked included).</summary>
+    public int MaxDomainsPerOrganization { get; private init; } = CipherSurface.Services.GovernanceOptions.DefaultMaxDomainsPerOrganization;
     public IReadOnlyList<IPAddress> DnsServers { get; private init; } = VerificationSetup.DefaultDnsServers;
     public int DnsTimeoutSeconds { get; private init; } = 5;
 
@@ -138,6 +144,10 @@ public sealed class ApiSettings
         var invitationLimit = ReadPositive(section, "RateLimiting:InvitationRequestsPerMinute", 10, problems);
         var globalLimit = ReadPositive(section, "RateLimiting:GlobalRequestsPerMinute", 300, problems);
         var verificationLimit = ReadPositive(section, "RateLimiting:VerificationRequestsPerMinute", 30, problems);
+        var governanceLimit = ReadPositive(section, "RateLimiting:GovernanceRequestsPerMinute", 60, problems);
+        var governanceActorLimit = ReadPositive(section, "RateLimiting:GovernanceActorRequestsPerMinute", 30, problems);
+        var maxDomains = ReadPositive(section, "Governance:MaxDomainsPerOrganization", CipherSurface.Services.GovernanceOptions.DefaultMaxDomainsPerOrganization, problems);
+        if (maxDomains > 10_000) problems.Add($"{SectionName}:Governance:MaxDomainsPerOrganization must be between 1 and 10000.");
 
         var lifetimeDays = ReadPositive(section, "Invitations:LifetimeDays", 7, problems);
         if (lifetimeDays > 30) problems.Add($"{SectionName}:Invitations:LifetimeDays must be between 1 and 30.");
@@ -171,6 +181,9 @@ public sealed class ApiSettings
             InvitationRequestsPerMinute = invitationLimit,
             GlobalRequestsPerMinute = globalLimit,
             VerificationRequestsPerMinute = verificationLimit,
+            GovernanceRequestsPerMinute = governanceLimit,
+            GovernanceActorRequestsPerMinute = governanceActorLimit,
+            MaxDomainsPerOrganization = maxDomains,
             DnsServers = dnsServers.Count == 0 ? VerificationSetup.DefaultDnsServers : dnsServers,
             DnsTimeoutSeconds = dnsTimeout,
             EmailConfirmationPage = emailConfirmationPage,

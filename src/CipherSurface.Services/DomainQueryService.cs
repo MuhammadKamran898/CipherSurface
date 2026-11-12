@@ -23,6 +23,9 @@ public sealed record OpenChallengeView(
 
 public enum DisputeRole { Claimant, Incumbent }
 
+public sealed record ScopeRuleView(
+    Guid Id, Guid DomainId, ScopeRuleType RuleType, string Pattern, Guid CreatedByUserId, DateTimeOffset CreatedAt, DateTimeOffset? RemovedAt);
+
 /// <summary>A dispute as one side sees it. It never names the other organization, and the platform administrator's note is not shown.</summary>
 public sealed record DomainDisputeView(Guid Id, DisputeRole Role, DisputeStatus Status, DateTimeOffset OpenedAt, DateTimeOffset? ResolvedAt);
 
@@ -45,6 +48,8 @@ public sealed class DomainQueryService
     private const int MaxPage = 100_000;
     private const int MaxEvidenceRows = 50;
     private const int MaxDisputeRows = 20;
+    private const int MaxLiveRulesListed = 200;
+    private const int MaxRulesWithHistory = 500;
 
     private readonly IDbContextFactory<CipherSurfaceDbContext> _factory;
     private readonly TimeProvider _time;
@@ -152,6 +157,41 @@ public sealed class DomainQueryService
             domain.Id, domain.Name, domain.Status, domain.CreatedAt, domain.CreatedByUserId,
             grant is null ? null : new DomainAuthorizationView(grant.Status, grant.AttestationTextVersion, grant.AcceptedAt, grant.RevokedAt),
             evidence, open, disputes);
+    }
+
+    /// <summary>
+    /// The scope rules of one domain. Live rules only by default, oldest first. With includeRemoved the history of removed
+    /// rules is shown too, newest first and capped, because removed rows are kept and can grow.
+    /// </summary>
+    public async Task<IReadOnlyList<ScopeRuleView>> ListScopeRulesAsync(Actor actor, Guid domainId, bool includeRemoved, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        await RequireMemberAsync(db, actor, ct);
+
+        var owned = await db.Domains.AsNoTracking().AnyAsync(d => d.Id == domainId && d.OrganizationId == actor.OrganizationId, ct);
+        if (!owned) throw new ServiceException("NotFound", "Domain not found.");
+
+        IQueryable<ScopeRule> rules = db.ScopeRules.AsNoTracking().Where(r => r.DomainId == domainId);
+        rules = includeRemoved
+            ? rules.OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id).Take(MaxRulesWithHistory)
+            : rules.Where(r => r.RemovedAt == null).OrderBy(r => r.CreatedAt).ThenBy(r => r.Id).Take(MaxLiveRulesListed);
+
+        return await rules
+            .Select(r => new ScopeRuleView(r.Id, r.DomainId, r.RuleType, r.Pattern, r.CreatedByUserId, r.CreatedAt, r.RemovedAt))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>One rule, live or removed. A rule of another organization is NotFound, like one that does not exist.</summary>
+    public async Task<ScopeRuleView> GetScopeRuleAsync(Actor actor, Guid ruleId, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        await RequireMemberAsync(db, actor, ct);
+
+        return await db.ScopeRules.AsNoTracking()
+            .Where(r => r.Id == ruleId && r.Domain.OrganizationId == actor.OrganizationId)
+            .Select(r => new ScopeRuleView(r.Id, r.DomainId, r.RuleType, r.Pattern, r.CreatedByUserId, r.CreatedAt, r.RemovedAt))
+            .SingleOrDefaultAsync(ct)
+            ?? throw new ServiceException("NotFound", "Scope rule not found.");
     }
 
     /// <summary>The caller must belong to the actor's organization. Reading does not need the organization to be active.</summary>

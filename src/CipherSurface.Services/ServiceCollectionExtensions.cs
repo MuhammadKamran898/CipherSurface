@@ -20,11 +20,14 @@ public static class ServiceCollectionExtensions
     /// ScanRunService (the worker side: begin, continue, complete) is not registered: it needs the scan-payload signing key,
     /// which only the worker channel has.
     /// </summary>
-    public static IServiceCollection AddCipherSurfaceServices(this IServiceCollection services, VerificationOptions? verification = null, EmailVerificationOptions? email = null)
+    public static IServiceCollection AddCipherSurfaceServices(
+        this IServiceCollection services, VerificationOptions? verification = null, EmailVerificationOptions? email = null,
+        GovernanceOptions? governance = null)
     {
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(verification ?? new VerificationOptions());
         services.TryAddSingleton(email ?? new EmailVerificationOptions());
+        services.TryAddSingleton(governance ?? new GovernanceOptions());
 
         services.TryAddSingleton<AuditLogWriter>();
         services.TryAddSingleton<ClaimService>();

@@ -98,7 +98,9 @@ public sealed class ApiHost : IAsyncDisposable
             ["CipherSurface:Setup:Token"] = SetupToken,
             // High limits so ordinary tests never meet them; the rate-limit tests lower them.
             ["CipherSurface:RateLimiting:AuthRequestsPerMinute"] = "1000",
-            ["CipherSurface:RateLimiting:GlobalRequestsPerMinute"] = "100000"
+            ["CipherSurface:RateLimiting:GlobalRequestsPerMinute"] = "100000",
+            ["CipherSurface:RateLimiting:GovernanceRequestsPerMinute"] = "100000",
+            ["CipherSurface:RateLimiting:GovernanceActorRequestsPerMinute"] = "100000"
         };
         if (settings is not null)
             foreach (var (key, value) in settings) configuration[key] = value;
