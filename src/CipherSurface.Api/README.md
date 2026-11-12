@@ -21,6 +21,11 @@ It contains no business rules and opens no database transactions of its own.
 | `POST /api/v1/invitations/preview` | token | What a link is for (organization, email, role, expiry). Changes nothing. |
 | `POST /api/v1/invitations/accept` | token | A new person accepts and chooses a password, which creates their account. |
 | `POST /api/v1/invitations/accept/existing` | yes + token | A signed-in account whose email matches the invitation joins. |
+| `GET /api/v1/domains/{domainId}/scope-rules` | any member | Live scope rules, oldest first. `?includeRemoved=true` adds removed rules (history, newest first, at most 500). |
+| `GET /api/v1/scope-rules/{ruleId}` | any member | One rule, live or removed. |
+| `POST /api/v1/domains/{domainId}/scope-rules` | Owner/Admin | `{ruleType: "Include"\|"Exclude", pattern}`. The pattern is normalized by the server. |
+| `PUT /api/v1/scope-rules/{ruleId}` | Owner/Admin | Same body. Changing nothing is a 200 with no audit entry. |
+| `DELETE /api/v1/scope-rules/{ruleId}` | Owner/Admin | Soft delete (204). Removing again is 409 `RuleRemoved`. |
 | `GET /api/v1/attestation` | yes | The authorization statement (version and text) a user must accept to add a domain. |
 | `POST /api/v1/domains` | Owner/Admin | Adds a domain after the statement is accepted. The server stores the hash of its own text. |
 | `GET /api/v1/domains` | any member | The organization's domains, paged (`page`, `pageSize` up to 200, optional `status`). |
@@ -95,6 +100,24 @@ The page therefore tries **every** membership of the signed-in user (from `GET /
 The page always sends `X-Organization-Id`; without it, a person with several organizations gets 400 `OrganizationRequired`.
 Only the preview should be used for the search. Call `confirm` once, for the organization the preview selected, because
 a confirm with a wrong token counts as a failed attempt.
+
+## Scope rules, governance limits and the domain quota
+
+- **Rules are not interpreted here.** Normalization, wildcards, the 100-live-rules limit and duplicate handling live in
+  `ScopeRuleService`; what a rule set means for a scan lives in the policy engine. In short: Include rules are required
+  for any scope, an Exclude rule always wins, `*.example.com` does not include `example.com` itself, and verifying a
+  domain does **not** add any Include rule. The dashboard must tell the user to add them.
+- A change to the rules narrows a running scan at its next continuation check (within one lease); nothing is cancelled when
+  a rule is edited.
+- Reading is allowed for every member, also while the organization is suspended. Writes need an Owner or Admin of an
+  active organization, checked before the request content is looked at.
+- **Governance rate limits** apply to scope-rule writes now, and will apply to grant revocation and organization
+  suspension. Two layers, both answering 429 `RateLimited` with `Retry-After`:
+  `RateLimiting:GovernanceRequestsPerMinute` (per client address, default 60) and
+  `RateLimiting:GovernanceActorRequestsPerMinute` (per signed-in user, default 30). Reads are not limited by either.
+  The per-user layer runs after authentication and before the handler, so a refused request costs no database work.
+- **Domain quota:** `Governance:MaxDomainsPerOrganization` (default 100, at most 10000). Every domain row counts, revoked
+  ones included. Adding past the limit is 409 `TooManyDomains`. Concurrent adds cannot pass it.
 
 ## Organization context
 
